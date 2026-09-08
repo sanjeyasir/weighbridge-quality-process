@@ -13,30 +13,32 @@ export default function PasswordSuccess() {
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
-      background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)",
+      background: "radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%), #f8fafc",
       padding: "20px"
     }}>
       <Card 
-        bordered={false} 
+        bordered={true} 
         style={{
           width: "100%",
           maxWidth: 440,
-          borderRadius: 16,
-          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+          borderRadius: 20,
+          boxShadow: "0 12px 35px rgba(0, 0, 0, 0.06)",
           textAlign: "center",
-          background: "#ffffff"
+          background: "#ffffff",
+          border: "1px solid #e2e8f0"
         }}
+        styles={{ body: { padding: "32px 26px" } }}
       >
         <Result
           status="success"
           title={
             <Title level={3} style={{ margin: 0, color: "#0f172a", fontWeight: 800 }}>
-              Password Changed Successfully!
+              Password Updated Successfully
             </Title>
           }
           subTitle={
-            <Paragraph style={{ color: "#64748b", marginTop: 8, fontSize: "14px" }}>
-              Your account security has been updated. Your temporary password is no longer active. You can now access your dashboard workspace.
+            <Paragraph style={{ color: "#64748b", marginTop: 8, fontSize: "0.85rem" }}>
+              Your account security has been verified. You can now access your operator dashboard workspace.
             </Paragraph>
           }
           extra={[
@@ -50,11 +52,12 @@ export default function PasswordSuccess() {
                 background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
                 border: "none",
                 fontWeight: 700,
-                height: 48,
-                borderRadius: 8
+                height: 46,
+                borderRadius: 10,
+                boxShadow: "0 6px 16px rgba(16, 185, 129, 0.28)"
               }}
             >
-              Go to Dashboard
+              Enter Dashboard Workspace
             </Button>
           ]}
         />

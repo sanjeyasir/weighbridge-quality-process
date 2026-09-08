@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { createWeighbridgeRequest } from "../../services/firebase/weighbridgeService";
@@ -14,14 +14,21 @@ import {
   message, 
   Spin, 
   Typography, 
-  Space 
+  Space, 
+  Tag, 
+  Alert, 
+  Divider 
 } from "antd";
 import { 
   InboxOutlined, 
   ArrowLeftOutlined, 
-  FileDoneOutlined,
-  EyeOutlined,
-  ScanOutlined
+  FileDoneOutlined, 
+  ScanOutlined, 
+  CameraOutlined, 
+  CheckCircleOutlined, 
+  CalculatorOutlined,
+  DeleteOutlined,
+  InfoCircleOutlined
 } from "@ant-design/icons";
 
 const { Title, Text, Paragraph } = Typography;
@@ -35,11 +42,23 @@ export default function CreateRequest() {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   const [scanning, setScanning] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Live calculation watch
+  const [calcFirstWeight, setCalcFirstWeight] = useState(0);
+  const [calcSecondWeight, setCalcSecondWeight] = useState(0);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const beforeUpload = (file) => {
-    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png';
+    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
     if (!isJpgOrPng) {
-      message.error('You can only upload JPG/PNG images!');
+      message.error('Please select a JPG, PNG, or WEBP ticket photograph!');
       return false;
     }
     const isLt5M = file.size / 1024 / 1024 < 5;
@@ -50,40 +69,38 @@ export default function CreateRequest() {
     setImageFile(file);
     setImageUrl(URL.createObjectURL(file));
     
-    // Trigger simulated OCR Extraction scan
-    triggerSimulatedOCR();
+    // Attempt optical inspection scan (without putting fake/default dummy data if text cannot be read)
+    performImageScan();
     return false; // Prevent auto-upload
   };
 
-  const triggerSimulatedOCR = () => {
+  const performImageScan = () => {
     setScanning(true);
-    message.loading({ content: 'AI Engine analyzing weighbridge ticket...', key: 'ocr', duration: 0 });
     
+    // Simulate optical document scanning check
     setTimeout(() => {
-      // Pre-fill form fields based on the user's provided ticket image
-      form.setFieldsValue({
-        ticketNo: "32079",
-        commodity: "10C-HC",
-        supplier: "H K MANAKA",
-        vehicleNo: "40-7036",
-        date: "17-07-2026",
-        time1: "10:24:26",
-        time2: "11:13:50",
-        firstWeight: 2840,
-        secondWeight: 2280,
-        netWeight: 560
-      });
       setScanning(false);
-      message.success({ content: 'AI OCR Extraction completed! Please verify fields.', key: 'ocr', duration: 3 });
-    }, 2500);
+      message.info("Ticket photo attached. Please enter or verify the ticket details in the form.");
+    }, 1200);
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImageUrl(null);
+    setScanning(false);
   };
 
   // Auto calculate net weight
   const handleWeightChange = () => {
-    const first = form.getFieldValue("firstWeight") || 0;
-    const second = form.getFieldValue("secondWeight") || 0;
-    if (first && second) {
-      form.setFieldValue("netWeight", first - second);
+    const first = Number(form.getFieldValue("firstWeight")) || 0;
+    const second = Number(form.getFieldValue("secondWeight")) || 0;
+    setCalcFirstWeight(first);
+    setCalcSecondWeight(second);
+    if (first > 0 && second > 0) {
+      const net = Math.max(0, first - second);
+      form.setFieldValue("netWeight", net);
+    } else {
+      form.setFieldValue("netWeight", undefined);
     }
   };
 
@@ -101,78 +118,132 @@ export default function CreateRequest() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Header */}
       <div>
-        <Button type="link" onClick={() => navigate("/requests")} style={{ padding: 0, fontWeight: 600, color: "#64748b" }}>
+        <Button 
+          type="link" 
+          onClick={() => navigate("/requests")} 
+          style={{ padding: 0, fontWeight: 700, color: "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
           <ArrowLeftOutlined /> Back to Records
         </Button>
-        <Title level={2} style={{ margin: 0, marginTop: 12, fontWeight: 800 }}>
+        <h1 style={{ margin: "10px 0 0 0", fontWeight: 800, fontSize: isMobile ? "1.4rem" : "1.75rem", color: "#0f172a", letterSpacing: "-0.02em" }}>
           New Weighbridge Requisition
-        </Title>
-        <Paragraph type="secondary">
-          Upload a clear photograph of the weighbridge ticket to extract data fields automatically.
-        </Paragraph>
+        </h1>
+        <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: isMobile ? "0.82rem" : "0.9rem" }}>
+          Attach the weighbridge ticket photograph and enter the tare, gross weight, and vehicle parameters.
+        </p>
       </div>
 
-      <Row gutter={[24, 24]}>
-        {/* Left Side: Upload & OCR Scanner */}
+      <Row gutter={[20, 20]}>
+        {/* Left Side: Ticket Photo Upload */}
         <Col xs={24} lg={10}>
           <Card 
-            title={<span style={{ fontWeight: 800 }}><ScanOutlined /> Ticket Photo Upload</span>} 
+            title={
+              <span style={{ fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                <CameraOutlined style={{ color: "#10b981" }} /> Ticket Photograph
+              </span>
+            } 
             bordered={true}
-            style={{ borderRadius: 16, height: "100%" }}
+            style={{ borderRadius: 16, height: "100%", background: "#ffffff" }}
+            styles={{ body: { padding: isMobile ? 14 : 20 } }}
           >
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <Upload.Dragger
-                accept="image/*"
-                beforeUpload={beforeUpload}
-                showUploadList={false}
-                disabled={scanning}
-              >
-                <p className="ant-upload-drag-icon">
-                  <InboxOutlined style={{ color: "#10b981" }} />
-                </p>
-                <p className="ant-upload-text" style={{ fontWeight: 600 }}>Click or drag ticket image to this area</p>
-                <p className="ant-upload-hint">Supports JPEG, PNG. Maximum file size 5MB.</p>
-              </Upload.Dragger>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {!imageUrl ? (
+                <Upload.Dragger
+                  accept="image/*"
+                  beforeUpload={beforeUpload}
+                  showUploadList={false}
+                  disabled={scanning}
+                  style={{ borderRadius: 12, padding: "28px 12px", background: "#f8fafc" }}
+                >
+                  <p className="ant-upload-drag-icon" style={{ marginBottom: 12 }}>
+                    <CameraOutlined style={{ color: "#10b981", fontSize: 36 }} />
+                  </p>
+                  <p className="ant-upload-text" style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a", margin: "0 0 4px 0" }}>
+                    {isMobile ? "Take Photo or Choose Ticket Image" : "Click or Drag Ticket Image Here"}
+                  </p>
+                  <p className="ant-upload-hint" style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+                    Supports JPG, PNG, WEBP. Max size 5MB.
+                  </p>
+                </Upload.Dragger>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ 
+                    position: "relative", 
+                    overflow: "hidden", 
+                    borderRadius: 12, 
+                    border: scanning ? "2px solid #10b981" : "1px solid #e2e8f0", 
+                    backgroundColor: "#0f172a",
+                    minHeight: 220,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <img 
+                      src={imageUrl} 
+                      alt="Ticket Photograph" 
+                      style={{ 
+                        width: "100%", 
+                        maxHeight: 340, 
+                        objectFit: "contain", 
+                        display: "block",
+                        opacity: scanning ? 0.75 : 1,
+                        transition: "opacity 0.3s"
+                      }} 
+                    />
+                    
+                    {scanning && <div className="laser-scanner-line" />}
 
-              {imageUrl && (
-                <div style={{ position: "relative", overflow: "hidden", borderRadius: 12, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc" }}>
-                  <img src={imageUrl} alt="Weighbridge Ticket Preview" style={{ width: "100%", maxHeight: 380, objectFit: "contain", display: "block" }} />
-                  
-                  {scanning && (
-                    <div style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: "4px",
-                      background: "linear-gradient(90deg, transparent, #10b981, transparent)",
-                      animation: "scanAnim 1.8s infinite linear"
-                    }} />
-                  )}
-                  {scanning && (
-                    <div style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: "rgba(16, 185, 129, 0.05)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#10b981",
-                      fontWeight: 700
-                    }}>
-                      <Space direction="vertical" align="center">
-                        <Spin size="large" />
-                        <span>AI Scanning...</span>
-                      </Space>
-                    </div>
-                  )}
+                    {scanning && (
+                      <div style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: "rgba(15, 23, 42, 0.4)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#ffffff",
+                        fontWeight: 700,
+                        backdropFilter: "blur(2px)"
+                      }}>
+                        <Space direction="vertical" align="center">
+                          <Spin size="large" />
+                          <span style={{ fontSize: "0.85rem" }}>Inspecting Document...</span>
+                        </Space>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontWeight: 600 }}>
+                      Photo Attached
+                    </Tag>
+                    <Button 
+                      type="text" 
+                      danger 
+                      icon={<DeleteOutlined />} 
+                      onClick={handleRemoveImage}
+                      size="small"
+                      style={{ fontWeight: 600 }}
+                    >
+                      Remove Photo
+                    </Button>
+                  </div>
                 </div>
               )}
+
+              <Alert
+                message="Manual Entry Verification"
+                description="Please fill in the official ticket number, supplier, vehicle registration, and weights from the physical ticket."
+                type="info"
+                showIcon
+                style={{ borderRadius: 10, fontSize: "0.8rem" }}
+              />
             </div>
           </Card>
         </Col>
@@ -180,9 +251,14 @@ export default function CreateRequest() {
         {/* Right Side: Requisition Form */}
         <Col xs={24} lg={14}>
           <Card 
-            title={<span style={{ fontWeight: 800 }}><FileDoneOutlined /> Verification & Details</span>} 
+            title={
+              <span style={{ fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                <FileDoneOutlined style={{ color: "#6366f1" }} /> Ticket Parameters & Verification
+              </span>
+            } 
             bordered={true}
-            style={{ borderRadius: 16 }}
+            style={{ borderRadius: 16, background: "#ffffff" }}
+            styles={{ body: { padding: isMobile ? 16 : 24 } }}
           >
             <Form
               form={form}
@@ -191,19 +267,19 @@ export default function CreateRequest() {
               requiredMark={true}
             >
               <Row gutter={16}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="ticketNo"
-                    label={<span style={{ fontWeight: 600 }}>Ticket Number</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>Ticket Number</span>}
                     rules={[{ required: true, message: "Ticket Number is required" }]}
                   >
                     <Input placeholder="e.g. 32079" size="large" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="commodity"
-                    label={<span style={{ fontWeight: 600 }}>Type of Commodity (Item)</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>Commodity (Item Type)</span>}
                     rules={[{ required: true, message: "Commodity type is required" }]}
                   >
                     <Input placeholder="e.g. 10C-HC" size="large" />
@@ -212,19 +288,19 @@ export default function CreateRequest() {
               </Row>
 
               <Row gutter={16}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="supplier"
-                    label={<span style={{ fontWeight: 600 }}>Supplier</span>}
-                    rules={[{ required: true, message: "Supplier is required" }]}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>Supplier / Mill Owner</span>}
+                    rules={[{ required: true, message: "Supplier name is required" }]}
                   >
                     <Input placeholder="e.g. H K MANAKA" size="large" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="vehicleNo"
-                    label={<span style={{ fontWeight: 600 }}>Vehicle Number</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>Vehicle Registration No</span>}
                     rules={[{ required: true, message: "Vehicle Number is required" }]}
                   >
                     <Input placeholder="e.g. 40-7036" size="large" />
@@ -233,106 +309,131 @@ export default function CreateRequest() {
               </Row>
 
               <Row gutter={16}>
-                <Col span={8}>
+                <Col xs={24} sm={8}>
                   <Form.Item
                     name="date"
-                    label={<span style={{ fontWeight: 600 }}>Weighing Date</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>Weighing Date</span>}
                     rules={[{ required: true, message: "Date is required" }]}
                   >
                     <Input placeholder="DD-MM-YYYY" size="large" />
                   </Form.Item>
                 </Col>
-                <Col span={8}>
+                <Col xs={12} sm={8}>
                   <Form.Item
                     name="time1"
-                    label={<span style={{ fontWeight: 600 }}>1st Weigh Time</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>1st Weigh Time</span>}
                   >
-                    <Input placeholder="HH:MM:SS" size="large" />
+                    <Input placeholder="10:24:26" size="large" />
                   </Form.Item>
                 </Col>
-                <Col span={8}>
+                <Col xs={12} sm={8}>
                   <Form.Item
                     name="time2"
-                    label={<span style={{ fontWeight: 600 }}>2nd Weigh Time</span>}
+                    label={<span style={{ fontWeight: 700, color: "#334155" }}>2nd Weigh Time</span>}
                   >
-                    <Input placeholder="HH:MM:SS" size="large" />
+                    <Input placeholder="11:13:50" size="large" />
                   </Form.Item>
                 </Col>
               </Row>
 
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item
-                    name="firstWeight"
-                    label={<span style={{ fontWeight: 600 }}>1st Weight (Gross)</span>}
-                    rules={[{ required: true, message: "1st Weight is required" }]}
-                  >
-                    <InputNumber 
-                      addonAfter="kg" 
-                      style={{ width: "100%" }} 
-                      size="large" 
-                      onChange={handleWeightChange}
-                      min={0}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item
-                    name="secondWeight"
-                    label={<span style={{ fontWeight: 600 }}>2nd Weight (Tare)</span>}
-                    rules={[{ required: true, message: "2nd Weight is required" }]}
-                  >
-                    <InputNumber 
-                      addonAfter="kg" 
-                      style={{ width: "100%" }} 
-                      size="large" 
-                      onChange={handleWeightChange}
-                      min={0}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item
-                    name="netWeight"
-                    label={<span style={{ fontWeight: 600 }}>Net Weight</span>}
-                    rules={[{ required: true, message: "Net Weight is required" }]}
-                  >
-                    <InputNumber addonAfter="kg" style={{ width: "100%" }} size="large" readOnly />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {/* Weight Breakdown Section */}
+              <div style={{ 
+                background: "#f8fafc", 
+                borderRadius: 12, 
+                padding: "16px 14px", 
+                border: "1px solid #e2e8f0", 
+                marginBottom: 20 
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "#0f172a", fontSize: "0.85rem", marginBottom: 12 }}>
+                  <CalculatorOutlined style={{ color: "#10b981" }} />
+                  Weight Measurements & Auto-Calculation
+                </div>
 
-              <Form.Item style={{ marginBottom: 0, textAlign: "right", marginTop: 12 }}>
-                <Button 
-                  type="primary" 
-                  htmlType="submit" 
-                  loading={loading}
-                  disabled={scanning}
-                  size="large"
-                  style={{ 
-                    borderRadius: 8, 
-                    fontWeight: 700, 
-                    background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                    border: "none",
-                    padding: "0 32px"
-                  }}
-                >
-                  Submit Requisition
-                </Button>
+                <Row gutter={12}>
+                  <Col xs={24} sm={8}>
+                    <Form.Item
+                      name="firstWeight"
+                      label={<span style={{ fontWeight: 600, fontSize: "0.8rem" }}>1st Weight (Gross)</span>}
+                      rules={[{ required: true, message: "Gross weight is required" }]}
+                      style={{ marginBottom: isMobile ? 12 : 0 }}
+                    >
+                      <InputNumber 
+                        addonAfter="kg" 
+                        style={{ width: "100%" }} 
+                        size="large" 
+                        onChange={handleWeightChange}
+                        min={0}
+                        placeholder="e.g. 2840"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <Form.Item
+                      name="secondWeight"
+                      label={<span style={{ fontWeight: 600, fontSize: "0.8rem" }}>2nd Weight (Tare)</span>}
+                      rules={[{ required: true, message: "Tare weight is required" }]}
+                      style={{ marginBottom: isMobile ? 12 : 0 }}
+                    >
+                      <InputNumber 
+                        addonAfter="kg" 
+                        style={{ width: "100%" }} 
+                        size="large" 
+                        onChange={handleWeightChange}
+                        min={0}
+                        placeholder="e.g. 2280"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <Form.Item
+                      name="netWeight"
+                      label={<span style={{ fontWeight: 600, fontSize: "0.8rem", color: "#10b981" }}>Net Weight (Auto)</span>}
+                      rules={[{ required: true, message: "Net Weight is required" }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <InputNumber 
+                        addonAfter="kg" 
+                        style={{ width: "100%", fontWeight: 800, color: "#10b981" }} 
+                        size="large" 
+                        readOnly 
+                        placeholder="Auto calculated"
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </div>
+
+              <Form.Item style={{ marginBottom: 0, textAlign: "right" }}>
+                <Space style={{ width: isMobile ? "100%" : "auto", justifyContent: "flex-end" }}>
+                  <Button 
+                    onClick={() => navigate("/requests")}
+                    style={{ borderRadius: 8 }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="primary" 
+                    htmlType="submit" 
+                    loading={loading}
+                    disabled={scanning}
+                    size="large"
+                    style={{ 
+                      borderRadius: 10, 
+                      fontWeight: 700, 
+                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                      border: "none",
+                      padding: "0 28px",
+                      boxShadow: "0 4px 14px rgba(16, 185, 129, 0.3)"
+                    }}
+                  >
+                    Submit Requisition
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
         </Col>
       </Row>
-
-      {/* Styled Scanning Keyframe Animation */}
-      <style>{`
-        @keyframes scanAnim {
-          0% { top: 0%; }
-          50% { top: 100%; }
-          100% { top: 0%; }
-        }
-      `}</style>
     </div>
   );
 }

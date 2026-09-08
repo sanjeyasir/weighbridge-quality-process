@@ -16,7 +16,8 @@ import {
   List, 
   Typography, 
   Drawer,
-  Alert
+  Alert,
+  Dropdown
 } from "antd";
 import { 
   MenuOutlined, 
@@ -28,8 +29,9 @@ import {
   BellOutlined, 
   CloudOutlined, 
   CloudSyncOutlined,
-  CheckCircleOutlined,
-  BuildOutlined
+  BuildOutlined,
+  AppstoreOutlined,
+  CloseOutlined
 } from "@ant-design/icons";
 
 const { Header, Sider, Content } = Layout;
@@ -39,14 +41,15 @@ export default function DashboardLayout({ children }) {
   const { currentUser, logout, isMockMode } = useAuth();
   const { notifications, markAsRead, markAllAsRead } = useNotifications();
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -55,71 +58,74 @@ export default function DashboardLayout({ children }) {
 
   const handleMenuClick = ({ key }) => {
     navigate(key);
-    setMobileOpen(false);
+    setMobileDrawerOpen(false);
   };
 
   const getSelectedKey = () => {
+    if (location.pathname.startsWith("/requests/create")) return "/requests/create";
+    if (location.pathname.startsWith("/requests/")) return "/requests";
     return location.pathname;
   };
 
   const getRoleLabel = (role) => {
     switch (role) {
       case "admin": return "Administrator";
-      case "requester": return "Requester Team";
+      case "requester": return "Requester";
       case "quality": return "Quality Team";
       case "finance": return "Finance Team";
-      default: return role;
+      default: return role || "Operator";
     }
   };
 
   const getRoleColor = (role) => {
     switch (role) {
-      case "admin": return "red";
-      case "requester": return "blue";
-      case "quality": return "purple";
-      case "finance": return "success";
-      default: return "default";
+      case "admin": return "#ef4444";
+      case "requester": return "#3b82f6";
+      case "quality": return "#8b5cf6";
+      case "finance": return "#10b981";
+      default: return "#64748b";
     }
   };
+
+  const canCreateRequest = currentUser?.role === "requester" || currentUser?.role === "admin";
+  const isAdmin = currentUser?.role === "admin";
 
   // Build menu items based on role
   const menuItems = [
     {
       key: "/dashboard",
-      icon: <DashboardOutlined />,
-      label: "Dashboard"
+      icon: <DashboardOutlined style={{ fontSize: 18 }} />,
+      label: "Dashboard Overview"
     },
     {
       key: "/requests",
-      icon: <TableOutlined />,
+      icon: <TableOutlined style={{ fontSize: 18 }} />,
       label: "Weighbridge Records"
     }
   ];
 
-  // Show "Create Request" only for Requester or Admin
-  if (currentUser?.role === "requester" || currentUser?.role === "admin") {
+  if (canCreateRequest) {
     menuItems.push({
       key: "/requests/create",
-      icon: <PlusCircleOutlined />,
-      label: "New Request"
+      icon: <PlusCircleOutlined style={{ fontSize: 18 }} />,
+      label: "New Requisition"
     });
   }
 
-  // Show "User Accounts" only for Admin
-  if (currentUser?.role === "admin") {
+  if (isAdmin) {
     menuItems.push({
       key: "/admin/users",
-      icon: <UserOutlined />,
+      icon: <UserOutlined style={{ fontSize: 18 }} />,
       label: "User Accounts"
     });
   }
 
   const notificationContent = (
-    <div style={{ width: 320 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, borderBottom: "1px solid #f1f5f9" }}>
-        <Text bold>In-App Notifications</Text>
+    <div style={{ width: isMobile ? 280 : 340 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #f1f5f9" }}>
+        <Text strong style={{ fontSize: "0.9rem", color: "#0f172a" }}>Alerts & Notifications</Text>
         {notifications.length > 0 && (
-          <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0 }}>
+          <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0, fontSize: "0.75rem", color: "#10b981" }}>
             Mark all read
           </Button>
         )}
@@ -127,21 +133,27 @@ export default function DashboardLayout({ children }) {
       <List
         size="small"
         dataSource={notifications}
-        locale={{ emptyText: "No unread alerts" }}
+        locale={{ emptyText: <span style={{ color: "#94a3b8", fontSize: "0.8rem", padding: "16px 0", display: "block" }}>No unread alerts</span> }}
         renderItem={item => (
           <List.Item 
             actions={[
-              <Button type="link" size="small" onClick={() => markAsRead(item.id)}>Read</Button>
+              <Button type="link" size="small" onClick={() => markAsRead(item.id)} style={{ fontSize: "0.75rem", padding: 0 }}>
+                Dismiss
+              </Button>
             ]}
-            style={{ padding: "8px 0" }}
+            style={{ padding: "10px 0", borderBottom: "1px solid #f8fafc" }}
           >
             <List.Item.Meta
               title={
-                <Link to={`/requests/${item.requestId}`} onClick={() => markAsRead(item.id)} style={{ fontSize: "0.85rem", color: "#6366f1", fontWeight: 600 }}>
-                  Ticket Alert
+                <Link 
+                  to={`/requests/${item.requestId}`} 
+                  onClick={() => markAsRead(item.id)} 
+                  style={{ fontSize: "0.82rem", color: "#6366f1", fontWeight: 700 }}
+                >
+                  Ticket Notification
                 </Link>
               }
-              description={<span style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.message}</span>}
+              description={<span style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.3, display: "block" }}>{item.message}</span>}
             />
           </List.Item>
         )}
@@ -149,90 +161,178 @@ export default function DashboardLayout({ children }) {
     </div>
   );
 
-  const sidebarContent = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Branding Header */}
-      <div style={{ 
-        height: 64, 
-        display: "flex", 
-        alignItems: "center", 
-        padding: "0 24px", 
-        gap: 12,
-        background: "#ffffff"
-      }}>
-        <BuildOutlined style={{ fontSize: 24, color: "#10b981" }} />
-        {!collapsed && (
-          <div>
-            <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem", lineHeight: 1.1 }}>
-              Weighbridge Hub
-            </div>
-            <div style={{ color: "#64748b", fontSize: "0.7rem", letterSpacing: "0.05em", marginTop: 2, textTransform: "uppercase" }}>
-              Quality & Billing
+  const userDropdownItems = {
+    items: [
+      {
+        key: "role-info",
+        label: (
+          <div style={{ padding: "4px 0" }}>
+            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>{currentUser?.displayName || "Operator"}</div>
+            <div style={{ color: "#64748b", fontSize: "0.75rem" }}>{currentUser?.email}</div>
+            <div style={{ marginTop: 4 }}>
+              <Tag color={getRoleColor(currentUser?.role)} style={{ fontSize: "0.68rem", fontWeight: 700 }}>
+                {getRoleLabel(currentUser?.role)}
+              </Tag>
             </div>
           </div>
-        )}
-      </div>
-      
-      <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: 0 }} />
-      
-      {/* Menu Options */}
-      <div style={{ flexGrow: 1, overflowY: "auto", padding: "12px 8px" }}>
-        <Menu
-          mode="inline"
-          theme="light"
-          inlineCollapsed={collapsed}
-          selectedKeys={[getSelectedKey()]}
-          onClick={handleMenuClick}
-          items={menuItems}
-          style={{ background: "transparent", border: "none" }}
-        />
-      </div>
+        ),
+        disabled: true,
+      },
+      { type: "divider" },
+      {
+        key: "change-password",
+        label: "Change Password",
+        onClick: () => navigate("/change-password"),
+      },
+      {
+        key: "logout",
+        danger: true,
+        icon: <LogoutOutlined />,
+        label: "Sign Out",
+        onClick: logout,
+      },
+    ],
+  };
 
-      <hr style={{ border: 0, borderTop: "1px solid #f1f5f9", margin: 0 }} />
+  // Render navigation sidebar (Desktop or Mobile Drawer)
+  const renderNavContent = (isDrawer = false) => {
+    const isExpanded = isDrawer || !collapsed;
 
-      {/* User Footer Profile */}
-      <div style={{ padding: collapsed ? "12px" : "20px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {!collapsed ? (
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#ffffff" }}>
+        {/* Branding Header */}
+        <div style={{ 
+          height: 68, 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: isExpanded ? "space-between" : "center",
+          padding: isExpanded ? "0 20px" : "0", 
+          gap: 12,
+          background: "#ffffff",
+          borderBottom: "1px solid #f1f5f9"
+        }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Avatar style={{ backgroundColor: "#10b981", fontWeight: 700 }}>
-              {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
-            </Avatar>
-            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>
-                {currentUser?.displayName || "User"}
-              </div>
-              <div style={{ color: "#64748b", fontSize: "0.75rem" }}>
-                {currentUser?.email}
-              </div>
+            <div style={{
+              width: 38,
+              height: 38,
+              borderRadius: 10,
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#ffffff",
+              fontSize: 20,
+              boxShadow: "0 4px 10px rgba(16, 185, 129, 0.25)",
+              flexShrink: 0
+            }}>
+              <BuildOutlined />
             </div>
+            {isExpanded && (
+              <div style={{ overflow: "hidden" }}>
+                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.98rem", lineHeight: 1.2, letterSpacing: "-0.01em" }}>
+                  Weighbridge Hub
+                </div>
+                <div style={{ color: "#10b981", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Quality & Billing
+                </div>
+              </div>
+            )}
           </div>
-        ) : (
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <Avatar style={{ backgroundColor: "#10b981", fontWeight: 700 }}>
-              {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
-            </Avatar>
-          </div>
-        )}
-        <Button 
-          type="default" 
-          danger 
-          icon={<LogoutOutlined />} 
-          onClick={logout} 
-          style={{ background: "rgba(239, 68, 68, 0.04)", borderColor: "rgba(239, 68, 68, 0.15)", width: "100%", padding: collapsed ? 0 : "4px 15px" }}
-        >
-          {!collapsed && "Sign Out"}
-        </Button>
+
+          {isDrawer && (
+            <Button 
+              type="text" 
+              icon={<CloseOutlined />} 
+              onClick={() => setMobileDrawerOpen(false)}
+              style={{ color: "#64748b" }}
+            />
+          )}
+        </div>
+        
+        {/* Menu Options with clear text wording */}
+        <div style={{ flexGrow: 1, overflowY: "auto", padding: "16px 12px" }}>
+          <Menu
+            mode="inline"
+            theme="light"
+            inlineCollapsed={!isExpanded}
+            selectedKeys={[getSelectedKey()]}
+            onClick={handleMenuClick}
+            items={menuItems}
+            style={{ 
+              background: "transparent", 
+              border: "none",
+              fontWeight: 600,
+              fontSize: "0.92rem"
+            }}
+          />
+        </div>
+
+        {/* User Footer Profile & Sign out with full wording */}
+        <div style={{ 
+          padding: isExpanded ? "18px 16px" : "12px", 
+          borderTop: "1px solid #f1f5f9",
+          background: "#fafbfc",
+          display: "flex", 
+          flexDirection: "column", 
+          gap: 12 
+        }}>
+          {isExpanded ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800, color: "#ffffff", width: 36, height: 36 }}>
+                  {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
+                </Avatar>
+                <div style={{ overflow: "hidden", flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {currentUser?.displayName || "Operator"}
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {currentUser?.email}
+                  </div>
+                </div>
+              </div>
+              <Tag color={getRoleColor(currentUser?.role)} style={{ fontWeight: 700, fontSize: "0.7rem", textTransform: "uppercase" }}>
+                {getRoleLabel(currentUser?.role)}
+              </Tag>
+            </div>
+          ) : (
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800 }}>
+                {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
+              </Avatar>
+            </div>
+          )}
+
+          <Button 
+            type="text" 
+            danger 
+            icon={<LogoutOutlined />} 
+            onClick={logout} 
+            style={{ 
+              background: "rgba(239, 68, 68, 0.05)", 
+              color: "#ef4444", 
+              fontWeight: 700, 
+              width: "100%", 
+              borderRadius: 8,
+              fontSize: "0.85rem",
+              height: 38,
+              padding: isExpanded ? "4px 14px" : "0"
+            }}
+          >
+            {isExpanded && "Sign Out"}
+          </Button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      {/* Desktop Sidebar */}
+    <Layout style={{ minHeight: "100vh", background: "#f8fafc" }}>
+      {/* Desktop Floating Sider */}
       {!isMobile && (
         <Sider
           width={260}
-          collapsedWidth={80}
+          collapsedWidth={76}
           collapsible
           collapsed={collapsed}
           trigger={null}
@@ -244,105 +344,169 @@ export default function DashboardLayout({ children }) {
             bottom: 0,
             zIndex: 100,
             background: "#ffffff",
-            borderRight: "1px solid #e2e8f0"
+            borderRight: "1px solid #e2e8f0",
+            boxShadow: "2px 0 8px rgba(0, 0, 0, 0.02)"
           }}
         >
-          {sidebarContent}
+          {renderNavContent(false)}
         </Sider>
       )}
 
-      {/* Mobile Drawer */}
+      {/* Mobile Drawer (Always expanded with full wording) */}
       <Drawer
         placement="left"
         closable={false}
-        onClose={() => setMobileOpen(false)}
-        open={mobileOpen}
+        onClose={() => setMobileDrawerOpen(false)}
+        open={mobileDrawerOpen}
         styles={{ body: { padding: 0, background: "#ffffff" } }}
-        width={260}
+        width={290}
       >
-        {sidebarContent}
+        {renderNavContent(true)}
       </Drawer>
 
       <Layout style={{ 
-        marginLeft: isMobile ? 0 : (collapsed ? 80 : 260), 
+        marginLeft: isMobile ? 0 : (collapsed ? 76 : 260), 
         minHeight: "100vh", 
         display: "flex", 
         flexDirection: "column",
-        transition: "all 0.2s"
+        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        background: "#f8fafc"
       }}>
         {/* Top Header */}
         <Header
           style={{
-            padding: "0 24px",
-            background: "rgba(255, 255, 255, 0.8)",
-            backdropFilter: "blur(12px)",
+            padding: isMobile ? "0 14px" : "0 28px",
+            background: "rgba(255, 255, 255, 0.88)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
             borderBottom: "1px solid #e2e8f0",
             position: "fixed",
             top: 0,
             right: 0,
-            left: isMobile ? 0 : (collapsed ? 80 : 260),
+            left: isMobile ? 0 : (collapsed ? 76 : 260),
             zIndex: 90,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             height: 64,
-            transition: "all 0.2s"
+            transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
           }}
         >
-          <Space size="middle">
+          <Space size={isMobile ? "small" : "middle"}>
             <Button
               type="text"
               icon={<MenuOutlined />}
-              onClick={() => isMobile ? setMobileOpen(!mobileOpen) : setCollapsed(!collapsed)}
-              style={{ fontSize: "16px", width: 40, height: 40, color: "#0f172a" }}
+              onClick={() => isMobile ? setMobileDrawerOpen(!mobileDrawerOpen) : setCollapsed(!collapsed)}
+              style={{ fontSize: "16px", width: 38, height: 38, color: "#0f172a", borderRadius: 8 }}
             />
-            <span style={{ fontWeight: 800, fontSize: "1.1rem", color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
-              Raw Material Processing
-            </span>
+            
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {isMobile && (
+                <div style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ffffff",
+                  fontSize: 14,
+                }}>
+                  <BuildOutlined />
+                </div>
+              )}
+              <span style={{ 
+                fontWeight: 800, 
+                fontSize: isMobile ? "0.95rem" : "1.05rem", 
+                color: "#0f172a", 
+                letterSpacing: "-0.01em",
+                whiteSpace: "nowrap"
+              }}>
+                {isMobile ? "Weighbridge Hub" : "Raw Material Processing"}
+              </span>
+            </div>
           </Space>
 
-          <Space size="middle">
+          <Space size={isMobile ? 6 : "middle"}>
             {/* Mock Mode Status Toggle */}
-            <Tooltip title={isMockMode ? "Click to use Firebase" : "Click to use Offline Mock Mode"}>
+            <Tooltip title={isMockMode ? "Click to connect Live Firebase" : "Click to switch to Offline Mock Mode"}>
               <Tag
                 icon={isMockMode ? <CloudSyncOutlined /> : <CloudOutlined />}
                 color={isMockMode ? "warning" : "success"}
                 onClick={() => toggleMockMode(!isMockMode)}
-                style={{ cursor: "pointer", fontWeight: 700, padding: "4px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6 }}
+                style={{ 
+                  cursor: "pointer", 
+                  fontWeight: 700, 
+                  padding: isMobile ? "2px 6px" : "3px 10px", 
+                  borderRadius: 8, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 4,
+                  fontSize: isMobile ? "0.7rem" : "0.78rem",
+                  margin: 0
+                }}
               >
-                {isMockMode ? "Mock Mode" : "Firebase Connected"}
+                {isMobile ? (isMockMode ? "Mock" : "Live") : (isMockMode ? "Offline Mock Mode" : "Firebase Live")}
               </Tag>
             </Tooltip>
 
             {/* Notification Bell */}
             <Popover 
               content={notificationContent} 
-              title="Notifications" 
+              title="Alerts" 
               trigger="click"
               placement="bottomRight"
             >
-              <Badge count={notifications.length} size="small" style={{ cursor: "pointer" }}>
+              <Badge count={notifications.length} size="small" offset={[-2, 2]}>
                 <Button 
                   type="text" 
                   shape="circle" 
-                  icon={<BellOutlined style={{ fontSize: 18 }} />} 
+                  icon={<BellOutlined style={{ fontSize: 17, color: "#334155" }} />} 
+                  style={{ width: 36, height: 36 }}
                 />
               </Badge>
             </Popover>
 
-            {/* Role Badge */}
-            {currentUser && (
-              <Tag color={getRoleColor(currentUser.role)} style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.65rem", padding: "2px 8px" }}>
-                {getRoleLabel(currentUser.role)}
-              </Tag>
-            )}
+            {/* Role / User Avatar dropdown */}
+            <Dropdown menu={userDropdownItems} placement="bottomRight" trigger={["click"]}>
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: 8, 
+                cursor: "pointer",
+                padding: "4px 8px",
+                borderRadius: 8,
+                transition: "background 0.2s"
+              }}>
+                <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800, width: 32, height: 32, fontSize: 13 }}>
+                  {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
+                </Avatar>
+                {!isMobile && (
+                  <Tag 
+                    style={{ 
+                      fontWeight: 700, 
+                      textTransform: "uppercase", 
+                      fontSize: "0.68rem", 
+                      padding: "2px 8px", 
+                      margin: 0,
+                      borderColor: getRoleColor(currentUser?.role),
+                      color: getRoleColor(currentUser?.role),
+                      background: "transparent"
+                    }}
+                  >
+                    {getRoleLabel(currentUser?.role)}
+                  </Tag>
+                )}
+              </div>
+            </Dropdown>
           </Space>
         </Header>
 
         {/* Content area */}
         <Content
           style={{
-            margin: "88px 24px 24px 24px",
+            margin: isMobile ? "74px 12px 76px 12px" : "84px 28px 28px 28px",
             flexGrow: 1,
             display: "flex",
             flexDirection: "column"
@@ -350,10 +514,15 @@ export default function DashboardLayout({ children }) {
         >
           {isMockMode && (
             <Alert
-              message="Running in Local Mock Mode. Active collections persist only in your browser storage. You can log in using requester@gmail.com, quality@gmail.com, or finance@gmail.com with password 'password', or admin@gmail.com with password 'admin'."
+              message={
+                <span style={{ fontSize: "0.82rem" }}>
+                  <strong>Offline Mock Mode Active:</strong> Data is saved locally in browser storage. Test accounts: <code>requester@gmail.com</code>, <code>quality@gmail.com</code>, <code>finance@gmail.com</code> (pw: <code>password</code>), or <code>admin@gmail.com</code> (pw: <code>admin</code>).
+                </span>
+              }
               type="warning"
               showIcon
-              style={{ marginBottom: 24, borderRadius: 10 }}
+              closable
+              style={{ marginBottom: 16, borderRadius: 10 }}
             />
           )}
           
@@ -361,6 +530,60 @@ export default function DashboardLayout({ children }) {
             {children}
           </div>
         </Content>
+
+        {/* Mobile Bottom Dock */}
+        {isMobile && (
+          <nav className="mobile-bottom-dock" aria-label="Mobile Navigation">
+            <button 
+              type="button" 
+              className={`dock-item ${getSelectedKey() === "/dashboard" ? "active" : ""}`}
+              onClick={() => navigate("/dashboard")}
+            >
+              <DashboardOutlined className="dock-icon" />
+              <span>Overview</span>
+            </button>
+
+            <button 
+              type="button" 
+              className={`dock-item ${getSelectedKey() === "/requests" ? "active" : ""}`}
+              onClick={() => navigate("/requests")}
+            >
+              <TableOutlined className="dock-icon" />
+              <span>Records</span>
+            </button>
+
+            {canCreateRequest && (
+              <button 
+                type="button" 
+                className={`dock-item ${getSelectedKey() === "/requests/create" ? "active" : ""}`}
+                onClick={() => navigate("/requests/create")}
+              >
+                <PlusCircleOutlined className="dock-icon" style={{ color: "#10b981", fontSize: 22 }} />
+                <span style={{ color: "#10b981", fontWeight: 700 }}>New Ticket</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button 
+                type="button" 
+                className={`dock-item ${getSelectedKey() === "/admin/users" ? "active" : ""}`}
+                onClick={() => navigate("/admin/users")}
+              >
+                <UserOutlined className="dock-icon" />
+                <span>Users</span>
+              </button>
+            )}
+
+            <button 
+              type="button" 
+              className="dock-item"
+              onClick={() => setMobileDrawerOpen(true)}
+            >
+              <AppstoreOutlined className="dock-icon" />
+              <span>More</span>
+            </button>
+          </nav>
+        )}
       </Layout>
     </Layout>
   );

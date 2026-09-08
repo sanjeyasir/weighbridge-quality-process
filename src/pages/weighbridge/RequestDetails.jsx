@@ -13,24 +13,37 @@ import {
   Input, 
   InputNumber, 
   Radio, 
-  Space,
-  Typography,
-  Spin,
-  message,
-  Card
+  Space, 
+  Typography, 
+  Spin, 
+  message, 
+  Card, 
+  Row, 
+  Col, 
+  Tag, 
+  Steps, 
+  Segmented, 
+  Divider, 
+  Alert 
 } from "antd";
 import { 
   ArrowLeftOutlined, 
   PrinterOutlined, 
   SaveOutlined, 
-  CheckCircleOutlined,
-  EditOutlined
+  CheckCircleOutlined, 
+  ExperimentOutlined, 
+  DollarCircleOutlined, 
+  FileTextOutlined, 
+  CarOutlined, 
+  SafetyCertificateOutlined, 
+  AppstoreOutlined,
+  ThunderboltOutlined
 } from "@ant-design/icons";
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 function formatDate(timestamp) {
-  if (!timestamp) return "";
+  if (!timestamp) return "-";
   try {
     if (timestamp && typeof timestamp.toDate === "function") {
       return timestamp.toDate().toLocaleDateString();
@@ -39,10 +52,60 @@ function formatDate(timestamp) {
       return new Date(timestamp.seconds * 1000).toLocaleDateString();
     }
     const d = new Date(timestamp);
-    return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+    return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
   } catch (e) {
-    return "";
+    return "-";
   }
+}
+
+// Convert numbers to capitalized English words for the receipt voucher
+function numberToWords(num) {
+  if (!num || isNaN(num)) return "Zero Rupees Only";
+  const wholePart = Math.floor(num);
+  const cents = Math.round((num - wholePart) * 100);
+  
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+                "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function convertChunk(n) {
+    let str = "";
+    if (n >= 100) {
+      str += ones[Math.floor(n / 100)] + " Hundred ";
+      n %= 100;
+    }
+    if (n >= 20) {
+      str += tens[Math.floor(n / 10)] + " ";
+      n %= 10;
+    }
+    if (n > 0) {
+      str += ones[n] + " ";
+    }
+    return str.trim();
+  }
+
+  let words = "";
+  if (wholePart >= 10000000) {
+    words += convertChunk(Math.floor(wholePart / 10000000)) + " Crore ";
+    num %= 10000000;
+  }
+  if (wholePart >= 100000) {
+    words += convertChunk(Math.floor(wholePart / 100000)) + " Lakh ";
+    num %= 100000;
+  }
+  if (wholePart >= 1000) {
+    words += convertChunk(Math.floor(wholePart / 1000)) + " Thousand ";
+    num %= 1000;
+  }
+  if (wholePart > 0) {
+    words += convertChunk(wholePart);
+  }
+
+  let result = words.trim() + " Rupees";
+  if (cents > 0) {
+    result += " and " + convertChunk(cents) + " Cents";
+  }
+  return result + " Only";
 }
 
 export default function RequestDetails() {
@@ -53,6 +116,8 @@ export default function RequestDetails() {
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [viewTab, setViewTab] = useState("workspace"); // "workspace" or "voucher"
+  const [isMobile, setIsMobile] = useState(false);
   const [form] = Form.useForm();
 
   // Local state for samples table inputs
@@ -61,6 +126,18 @@ export default function RequestDetails() {
     { sampleLotNo: "56", sand: "", sieve1438: "", fm: "", moRig: "", avgMoistProbe: "", ec: "", ph: "", bsbd: "", box: "", bd: "" },
     { sampleLotNo: "90", sand: "", sieve1438: "", fm: "", moRig: "", avgMoistProbe: "", ec: "", ph: "", bsbd: "", box: "", bd: "" }
   ]);
+
+  // Live state for net value display
+  const [liveNetWeightQty, setLiveNetWeightQty] = useState(0);
+  const [liveGrossPayment, setLiveGrossPayment] = useState(0);
+  const [liveNetPayment, setLiveNetPayment] = useState(0);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const loadRequest = async () => {
     try {
@@ -73,37 +150,46 @@ export default function RequestDetails() {
       }
       setRequest(data);
       
-      // Initialize state
       if (data.samples && data.samples.length > 0) {
         setSamples(data.samples);
       }
 
+      const initialRate = data.rateApproval !== undefined ? data.rateApproval : 88.00;
+      const initialWastage = data.wastage !== undefined ? data.wastage : 10;
+      const initialMoistureCut = data.moistureCut !== undefined ? data.moistureCut : 7;
+      const initialDeduction = data.deduction !== undefined ? data.deduction : 0;
+      
+      const netWeight = data.netWeight || 560;
+      const computedNetQty = data.netWeightQty !== undefined ? data.netWeightQty : (netWeight - initialWastage - initialMoistureCut);
+      const computedGross = data.grossPayment !== undefined ? data.grossPayment : (computedNetQty * initialRate);
+      const computedNetVal = data.netPayment !== undefined ? data.netPayment : (computedGross - initialDeduction);
+
+      setLiveNetWeightQty(computedNetQty);
+      setLiveGrossPayment(computedGross);
+      setLiveNetPayment(computedNetVal);
+
       form.setFieldsValue({
-        qualityNo: data.qualityNo || "52062",
+        qualityNo: data.qualityNo || `CR-${data.requestNo || "52062"}`,
         mill: data.mill || "CPH-Galle",
-        qualityDate: data.qualityDate || data.date || "20/02/17",
-        consecNo: data.consecNo || "",
+        qualityDate: data.qualityDate || data.date || "17/07/2026",
+        consecNo: data.consecNo || "01",
         time1: data.time1 || "",
         time2: data.time2 || "",
+        supplierRep: data.supplierRep || "",
         
         // Quality fields
         h2oPercent: data.h2oPercent || "9.5%",
         avBagWt: data.avBagWt || "0.1 kg",
-        bagsOwingBf: data.bagsOwingBf || "",
-        issued: data.issued || "",
-        receivedBags: data.receivedBags || "",
-        balance: data.balance || "",
-        bagsOwingCf: data.bagsOwingCf || "",
         dnNo: data.dnNo || "",
 
         // Finance fields
-        rateApproval: data.rateApproval !== undefined ? data.rateApproval : 88.00,
-        wastage: data.wastage !== undefined ? data.wastage : 10,
-        moistureCut: data.moistureCut !== undefined ? data.moistureCut : 7,
-        netWeightQty: data.netWeightQty || 543,
-        grossPayment: data.grossPayment || 47784.50,
-        deduction: data.deduction !== undefined ? data.deduction : 0,
-        netPayment: data.netPayment || 47784.50,
+        rateApproval: initialRate,
+        wastage: initialWastage,
+        moistureCut: initialMoistureCut,
+        netWeightQty: computedNetQty,
+        grossPayment: computedGross,
+        deduction: initialDeduction,
+        netPayment: computedNetVal,
         paymentMode: data.paymentMode || "Cheque",
         chequeNo: data.chequeNo || "",
         receivedByName: data.receivedByName || data.supplier || "",
@@ -122,42 +208,26 @@ export default function RequestDetails() {
     loadRequest();
   }, [id]);
 
-  const fillDemoSamples = () => {
-    setSamples([
-      { sampleLotNo: "24", sand: "1.0", sieve1438: "7.8", fm: "8.6", moRig: "9.0", avgMoistProbe: "21.0", ec: "1.0", ph: "7.8", bsbd: "5.8", box: "2.1", bd: "0.09612" },
-      { sampleLotNo: "56", sand: "1.0", sieve1438: "8.0", fm: "8.5", moRig: "9.2", avgMoistProbe: "20.0", ec: "0.9", ph: "7.6", bsbd: "5.7", box: "2.0", bd: "0.09520" },
-      { sampleLotNo: "90", sand: "1.0", sieve1438: "7.5", fm: "8.7", moRig: "8.8", avgMoistProbe: "22.0", ec: "1.1", ph: "7.9", bsbd: "5.9", box: "2.2", bd: "0.09705" }
-    ]);
-    form.setFieldsValue({
-      h2oPercent: "9.5%",
-      avBagWt: "0.1 kg",
-      bagsOwingBf: "95 Bags",
-      issued: "0",
-      receivedBags: "95",
-      balance: "0",
-      bagsOwingCf: "0",
-      dnNo: "DN-44021"
-    });
-    message.success("Populated reference quality details from paper copy!");
-  };
-
   const handleSampleCellChange = (idx, field, value) => {
     const next = [...samples];
     next[idx] = { ...next[idx], [field]: value };
     setSamples(next);
   };
 
-  // Trigger calculations dynamically
   const handleFinanceCalc = () => {
-    const rate = form.getFieldValue("rateApproval") || 0;
-    const wastage = form.getFieldValue("wastage") || 0;
-    const moistureCut = form.getFieldValue("moistureCut") || 0;
-    const deduction = form.getFieldValue("deduction") || 0;
+    const rate = Number(form.getFieldValue("rateApproval")) || 0;
+    const wastage = Number(form.getFieldValue("wastage")) || 0;
+    const moistureCut = Number(form.getFieldValue("moistureCut")) || 0;
+    const deduction = Number(form.getFieldValue("deduction")) || 0;
 
-    const netWeight = request.netWeight || 0;
-    const netQty = netWeight - wastage - moistureCut;
+    const netWeight = Number(request?.netWeight) || 0;
+    const netQty = Math.max(0, netWeight - wastage - moistureCut);
     const grossVal = netQty * rate;
-    const netVal = grossVal - deduction;
+    const netVal = Math.max(0, grossVal - deduction);
+
+    setLiveNetWeightQty(netQty);
+    setLiveGrossPayment(grossVal);
+    setLiveNetPayment(netVal);
 
     form.setFieldsValue({
       netWeightQty: netQty,
@@ -189,6 +259,10 @@ export default function RequestDetails() {
         qualityNo: values.qualityNo || "",
         mill: values.mill || "",
         qualityDate: values.qualityDate || "",
+        consecNo: values.consecNo || "",
+        h2oPercent: values.h2oPercent || "",
+        avBagWt: values.avBagWt || "",
+        supplierRep: values.supplierRep || "",
         samples: mappedSamples
       }, currentUser);
 
@@ -209,9 +283,9 @@ export default function RequestDetails() {
       await submitFinanceData(request.id, values, currentUser, markCompleted);
       
       if (markCompleted) {
-        message.success("Requisition successfully Completed & locked!");
+        message.success("Requisition successfully Completed & Finalized!");
       } else {
-        message.success("Finance draft details saved!");
+        message.success("Finance draft calculations saved!");
       }
       loadRequest();
     } catch (err) {
@@ -225,181 +299,809 @@ export default function RequestDetails() {
   if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
-        <Spin size="large" tip="Loading pith receipt details..." />
+        <Spin size="large" tip="Loading ticket details..." />
       </div>
     );
   }
 
   const isQualityRole = currentUser?.role === "quality" || currentUser?.role === "admin";
   const isFinanceRole = currentUser?.role === "finance" || currentUser?.role === "admin";
-
-  const isCompleted = request.status === "Completed";
+  const isCompleted = request?.status === "Completed";
   
-  // Quality fields are editable if the user has Quality privileges AND request is not finalized.
   const canEditQuality = isQualityRole && !isCompleted;
-  
-  // Finance fields are editable if the user has Finance privileges AND request is not finalized.
   const canEditFinance = isFinanceRole && !isCompleted;
+
+  let currentStep = 0;
+  if (request?.status === "Pending Quality") currentStep = 1;
+  else if (request?.status === "Pending Finance") currentStep = 2;
+  else if (request?.status === "Completed") currentStep = 3;
+
+  const amountInWords = numberToWords(request?.netPayment || liveNetPayment);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Import script font for handwritten signatures */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap');
-        
-        .receipt-view {
-          background-color: #f8fafc;
-          padding: 24px;
-          min-height: 100vh;
-        }
-        
-        .receipt-paper {
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 30px;
-          border-radius: 12px;
-          position: relative;
-          color: #000000;
-          font-family: 'Times New Roman', Times, serif;
-        }
-
-        .receipt-header-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-        }
-
-        .receipt-title {
-          font-size: 24px;
-          font-weight: 800;
-          letter-spacing: -0.02em;
-          text-align: center;
-          flex-grow: 1;
-        }
-
-        .receipt-meta-box {
-          border: 1.5px solid #000000;
-          padding: 8px 16px;
-          text-align: left;
-          min-width: 250px;
-          font-size: 11px;
-        }
-
-        .pith-receipt-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 12px;
-        }
-
-        .pith-receipt-table th,
-        .pith-receipt-table td {
-          border: 1.5px solid #000000;
-          padding: 6px 10px;
-          font-size: 13px;
-          vertical-align: middle;
-        }
-
-        .pith-receipt-table th {
-          background-color: #f1f5f9;
-          font-weight: 800;
-          text-align: center;
-        }
-
-        .nested-grid-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        .nested-grid-table td {
-          border: none;
-          border-bottom: 1px solid #e2e8f0;
-          padding: 8px 4px;
-        }
-
-        .nested-grid-table tr:last-child td {
-          border-bottom: none;
-        }
-
-        .input-line {
-          border: none !important;
-          border-bottom: 1px dashed #94a3b8 !important;
-          background: transparent !important;
-          border-radius: 0px !important;
-          width: 100%;
-          padding: 0 4px !important;
-          font-weight: 600;
-          color: #1e293b;
-        }
-        
-        .input-line:focus {
-          border-bottom: 1px solid #10b981 !important;
-          box-shadow: none !important;
-        }
-
-        .read-only-val {
-          font-weight: 700;
-          color: #1e293b;
-        }
-
-        .signature-font {
-          font-family: 'Caveat', cursive;
-          font-size: 24px;
-          color: #1e40af;
-          line-height: 1;
-        }
-
-        @media print {
-          body {
-            background: #ffffff;
-            color: #000000;
-          }
-          .no-print {
-            display: none !important;
-          }
-          .receipt-paper {
-            border: none;
-            box-shadow: none;
-            padding: 0;
-            margin: 0;
-            max-width: 100%;
-          }
-        }
-      `}</style>
-
-      {/* Top action header (no-print) */}
-      <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <Button type="link" onClick={() => navigate("/requests")} style={{ padding: 0, fontWeight: 600, color: "#64748b" }}>
-          <ArrowLeftOutlined /> Back to Records
-        </Button>
-        <Space>
-          {canEditQuality && (
-            <Button type="dashed" onClick={fillDemoSamples} icon={<EditOutlined />}>
-              Auto-Fill Sample Reference
-            </Button>
-          )}
-          
+      {/* Top Header */}
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 12 }}>
+        <div>
           <Button 
-            type="default" 
-            icon={<PrinterOutlined />} 
-            onClick={() => downloadReceiptPDF(request)}
-            style={{ fontWeight: 600 }}
+            type="link" 
+            onClick={() => navigate("/requests")} 
+            style={{ padding: 0, fontWeight: 700, color: "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}
           >
-            Print Receipt
+            <ArrowLeftOutlined /> Back to Records
           </Button>
           
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+            <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? "1.35rem" : "1.7rem", color: "#0f172a", letterSpacing: "-0.02em" }}>
+              Requisition #{request?.requestNo}
+            </h1>
+            <Tag 
+              color={isCompleted ? "success" : request?.status === "Pending Quality" ? "purple" : "warning"} 
+              style={{ fontWeight: 700, padding: "2px 10px", borderRadius: 6, fontSize: "0.8rem" }}
+            >
+              {request?.status}
+            </Tag>
+          </div>
+        </div>
+
+        {/* View Switcher & Print Action */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, width: isMobile ? "100%" : "auto", justifyContent: "space-between" }}>
+          <Segmented
+            value={viewTab}
+            onChange={(val) => setViewTab(val)}
+            options={[
+              { label: "Interactive Workspace", value: "workspace", icon: <AppstoreOutlined /> },
+              { label: "Official Receipt Voucher", value: "voucher", icon: <FileTextOutlined /> }
+            ]}
+            style={{ fontWeight: 600, background: "#e2e8f0" }}
+          />
+
+          <Button 
+            type="primary" 
+            icon={<PrinterOutlined />} 
+            onClick={() => downloadReceiptPDF(request)}
+            style={{ 
+              fontWeight: 700, 
+              borderRadius: 8, 
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              border: "none",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)"
+            }}
+          >
+            Download PDF
+          </Button>
+        </div>
+      </div>
+
+      {/* Progress Timeline Tracker */}
+      <Card 
+        bordered={true} 
+        style={{ borderRadius: 16, background: "#ffffff" }}
+        styles={{ body: { padding: isMobile ? "14px 10px" : "18px 24px" } }}
+      >
+        <Steps
+          size="small"
+          current={currentStep}
+          responsive={true}
+          items={[
+            { title: 'Weighbridge Requisition', description: `Ticket #${request?.ticketNo || request?.requestNo}` },
+            { title: 'Quality Lab Test', description: request?.qcBy ? `By ${request.qcBy.name}` : 'Pending Quality' },
+            { title: 'Commercial Billing', description: request?.financeBy ? `By ${request.financeBy.name}` : 'Pending Finance' },
+            { title: 'Completed & Printed', description: isCompleted ? 'Fully Settled' : 'Awaiting Finalize' }
+          ]}
+        />
+      </Card>
+
+      {/* Mode 1: Interactive Workspace View */}
+      {viewTab === "workspace" && (
+        <Form form={form} layout="vertical" component={false}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Card 1: Ticket & Vehicle Profile */}
+            <Card 
+              title={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <CarOutlined style={{ color: "#3b82f6" }} />
+                  <span style={{ fontWeight: 800, color: "#0f172a" }}>Weighbridge Ticket & Vehicle Metrics</span>
+                </div>
+              }
+              bordered={true}
+              style={{ borderRadius: 16, background: "#ffffff" }}
+              styles={{ body: { padding: isMobile ? 14 : 22 } }}
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={12} sm={6}>
+                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>Vehicle Registration</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{request?.vehicleNo}</div>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>Supplier / Mill Owner</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{request?.supplier}</div>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>Commodity (Contract)</div>
+                  <div style={{ marginTop: 2 }}><Tag color="blue" style={{ fontWeight: 700 }}>{request?.commodity}</Tag></div>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>Weighing Date & Time</div>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginTop: 2 }}>
+                    {request?.date} {request?.time1 && `(${request.time1} / ${request.time2 || ""})`}
+                  </div>
+                </Col>
+              </Row>
+
+              <Divider style={{ margin: "16px 0" }} />
+
+              <Row gutter={[12, 12]}>
+                <Col xs={24} sm={8}>
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>1st Weight (Gross)</div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#0f172a", marginTop: 2 }}>
+                      {request?.firstWeight ? `${request.firstWeight.toLocaleString()} kg` : "-"}
+                    </div>
+                  </div>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>2nd Weight (Tare)</div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#0f172a", marginTop: 2 }}>
+                      {request?.secondWeight ? `${request.secondWeight.toLocaleString()} kg` : "-"}
+                    </div>
+                  </div>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <div style={{ background: "rgba(16, 185, 129, 0.08)", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 700 }}>Ticket Net Weight</div>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#10b981", marginTop: 2 }}>
+                      {request?.netWeight ? `${request.netWeight.toLocaleString()} kg` : "-"}
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Card 2: Quality Assurance Lab Evaluation */}
+            <Card 
+              title={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ExperimentOutlined style={{ color: "#8b5cf6" }} />
+                  <span style={{ fontWeight: 800, color: "#0f172a" }}>Quality Assurance & Lab Sample Evaluation</span>
+                </div>
+              }
+              bordered={true}
+              style={{ borderRadius: 16, background: "#ffffff" }}
+              styles={{ body: { padding: isMobile ? 14 : 22 } }}
+            >
+              <Row gutter={16} style={{ marginBottom: 12 }}>
+                <Col xs={24} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>CR Quality Receipt No</span>} name="qualityNo">
+                    <Input disabled={!canEditQuality} placeholder="52062" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Mill Origin</span>} name="mill">
+                    <Input disabled={!canEditQuality} placeholder="CPH-Galle" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Supplier Representative</span>} name="supplierRep">
+                    <Input disabled={!canEditQuality} placeholder="Rep Name" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>H2O Moisture %</span>} name="h2oPercent">
+                    <Input disabled={!canEditQuality} placeholder="9.5%" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Average Bag Weight</span>} name="avBagWt">
+                    <Input disabled={!canEditQuality} placeholder="0.1 kg" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Consecutive No</span>} name="consecNo">
+                    <Input disabled={!canEditQuality} placeholder="01" size="large" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <div style={{ marginBottom: 8, fontWeight: 700, color: "#0f172a", fontSize: "0.88rem" }}>
+                Sample Lots Evaluation Parameters
+              </div>
+
+              {/* Lab Samples Matrix */}
+              <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10, background: "#fafbfc" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                  <thead>
+                    <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>Sample Lot</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>Sand%</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>+1/4"+3/8"%</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>FM%</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>Mo%Rig</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>Probe%</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>EC</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>pH</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>BSBD</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>Box</th>
+                      <th style={{ padding: "10px 8px", fontSize: "0.75rem", textAlign: "center", color: "#475569" }}>BD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {samples.map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.sampleLotNo} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "sampleLotNo", e.target.value)} 
+                            style={{ width: 65, textAlign: "center", fontWeight: 700 }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.sand} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "sand", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.sieve1438} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "sieve1438", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.fm} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "fm", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.moRig} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "moRig", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.avgMoistProbe} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "avgMoistProbe", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.ec} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "ec", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.ph} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "ph", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.bsbd} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "bsbd", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.box} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "box", e.target.value)} 
+                            style={{ width: 55, textAlign: "center" }} 
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <Input 
+                            value={row.bd} 
+                            disabled={!canEditQuality}
+                            onChange={(e) => handleSampleCellChange(idx, "bd", e.target.value)} 
+                            style={{ width: 75, textAlign: "center" }} 
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {request?.qcBy && (
+                <div style={{ marginTop: 14, fontSize: "0.78rem", color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
+                  <CheckCircleOutlined style={{ color: "#10b981" }} />
+                  <span>QC Verified by <strong>{request.qcBy.name}</strong> on {formatDate(request.qcBy.timestamp)}</span>
+                </div>
+              )}
+            </Card>
+
+            {/* Card 3: Commercial Billing & Finance Settlement */}
+            <Card 
+              title={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <DollarCircleOutlined style={{ color: "#f59e0b" }} />
+                  <span style={{ fontWeight: 800, color: "#0f172a" }}>Commercial Billing, Deductions & Payout Settlement</span>
+                </div>
+              }
+              bordered={true}
+              style={{ borderRadius: 16, background: "#ffffff" }}
+              styles={{ body: { padding: isMobile ? 14 : 22 } }}
+            >
+              {/* Live Calculation Banner */}
+              <div style={{ 
+                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", 
+                borderRadius: 14, 
+                padding: isMobile ? "16px 14px" : "20px 24px", 
+                color: "#ffffff",
+                marginBottom: 20
+              }}>
+                <Row gutter={[16, 16]} align="middle">
+                  <Col xs={24} sm={12} md={8}>
+                    <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Settlement Net Weight Qty</div>
+                    <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#ffffff", marginTop: 2 }}>
+                      {liveNetWeightQty.toLocaleString()} kg
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "#64748b", marginTop: 2 }}>
+                      (Ticket Net - Wastage - Moisture Cut)
+                    </div>
+                  </Col>
+
+                  <Col xs={24} sm={12} md={8}>
+                    <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Gross Payable Amount</div>
+                    <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#e2e8f0", marginTop: 2 }}>
+                      Rs. {liveGrossPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "#64748b", marginTop: 2 }}>
+                      (Net Qty × Approved Rate PMT)
+                    </div>
+                  </Col>
+
+                  <Col xs={24} sm={24} md={8}>
+                    <div style={{ fontSize: "0.75rem", color: "#34d399", fontWeight: 700 }}>FINAL NET PAYOUT</div>
+                    <div style={{ fontSize: isMobile ? "1.6rem" : "1.85rem", fontWeight: 900, color: "#10b981", marginTop: 2 }}>
+                      Rs. {liveNetPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2 }}>
+                      (Gross - Advance Deductions)
+                    </div>
+                  </Col>
+                </Row>
+              </div>
+
+              <Row gutter={16}>
+                <Col xs={12} sm={6}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Wastage Cut (Kg)</span>} name="wastage">
+                    <InputNumber 
+                      disabled={!canEditFinance}
+                      onChange={handleFinanceCalc}
+                      addonAfter="kg"
+                      style={{ width: "100%" }}
+                      size="large"
+                      min={0}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Moisture Cut (Kg)</span>} name="moistureCut">
+                    <InputNumber 
+                      disabled={!canEditFinance}
+                      onChange={handleFinanceCalc}
+                      addonAfter="kg"
+                      style={{ width: "100%" }}
+                      size="large"
+                      min={0}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Approved Rate (PMT)</span>} name="rateApproval">
+                    <InputNumber 
+                      disabled={!canEditFinance}
+                      onChange={handleFinanceCalc}
+                      addonBefore="Rs."
+                      style={{ width: "100%" }}
+                      size="large"
+                      min={0}
+                      step={0.5}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Advance Deduction</span>} name="deduction">
+                    <InputNumber 
+                      disabled={!canEditFinance}
+                      onChange={handleFinanceCalc}
+                      addonBefore="Rs."
+                      style={{ width: "100%" }}
+                      size="large"
+                      min={0}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Divider style={{ margin: "10px 0 16px 0" }} />
+
+              <Row gutter={16}>
+                <Col xs={24} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Payment Disbursement Mode</span>} name="paymentMode">
+                    <Radio.Group disabled={!canEditFinance} size="middle" buttonStyle="solid">
+                      <Radio.Button value="Cheque">Cheque (CHQ)</Radio.Button>
+                      <Radio.Button value="Cash">Cash</Radio.Button>
+                      <Radio.Button value="DPS">DPS</Radio.Button>
+                    </Radio.Group>
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Cheque / Reference Number</span>} name="chequeNo">
+                    <Input disabled={!canEditFinance} placeholder="e.g. CHQ-882910" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={4}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Payee Name</span>} name="receivedByName">
+                    <Input disabled={!canEditFinance} placeholder="Payee Name" size="large" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} sm={4}>
+                  <Form.Item label={<span style={{ fontWeight: 700 }}>Payee NIC No</span>} name="nicNo">
+                    <Input disabled={!canEditFinance} placeholder="NIC / Identity" size="large" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              {request?.financeBy && (
+                <div style={{ marginTop: 8, fontSize: "0.78rem", color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
+                  <CheckCircleOutlined style={{ color: "#10b981" }} />
+                  <span>Finance Authorized by <strong>{request.financeBy.name}</strong> on {formatDate(request.financeBy.timestamp)}</span>
+                </div>
+              )}
+            </Card>
+
+            {/* Card 4: Signatures & Authorizations */}
+            <Card 
+              title={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <SafetyCertificateOutlined style={{ color: "#10b981" }} />
+                  <span style={{ fontWeight: 800, color: "#0f172a" }}>Department Signatures & Authorizations</span>
+                </div>
+              }
+              bordered={true}
+              style={{ borderRadius: 16, background: "#ffffff" }}
+              styles={{ body: { padding: isMobile ? 14 : 22 } }}
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={8}>
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px", background: "#f8fafc" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Requisition Issued By</div>
+                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem", marginTop: 4 }}>
+                      {request?.requestedBy?.name || "Weighbridge Office"}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{request?.requestedBy?.email}</div>
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={8}>
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px", background: "#f8fafc" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Quality Lab Verification</div>
+                    <div style={{ fontWeight: 800, color: request?.qcBy ? "#8b5cf6" : "#94a3b8", fontSize: "0.95rem", marginTop: 4 }}>
+                      {request?.qcBy?.name || "Pending Quality Review"}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                      {request?.qcBy ? `Approved on ${formatDate(request.qcBy.timestamp)}` : "Awaiting Lab Parameters"}
+                    </div>
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={8}>
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px", background: "#f8fafc" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Finance Settlement</div>
+                    <div style={{ fontWeight: 800, color: request?.financeBy ? "#10b981" : "#94a3b8", fontSize: "0.95rem", marginTop: 4 }}>
+                      {request?.financeBy?.name || "Pending Finance Settlement"}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                      {request?.financeBy ? `Authorized on ${formatDate(request.financeBy.timestamp)}` : "Awaiting Final Signoff"}
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+          </div>
+        </Form>
+      )}
+
+      {/* Mode 2: Official Corporate Structured Voucher Format */}
+      {viewTab === "voucher" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{
+            background: "#ffffff",
+            border: "1.5px solid #0f172a",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.08)",
+            maxWidth: 1060,
+            width: "100%",
+            margin: "0 auto",
+            padding: isMobile ? "16px 12px" : "32px 36px",
+            borderRadius: 8,
+            fontFamily: "'Times New Roman', Times, serif",
+            color: "#000000",
+            overflowX: "auto"
+          }}>
+            {/* Voucher Top Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div style={{ width: 230 }}>
+                <div style={{ fontWeight: 800, fontSize: "14px", letterSpacing: "0.02em" }}>HAYLEYS AVENTURA (PVT) LTD</div>
+                <div style={{ fontSize: "10.5px", color: "#475569", marginTop: 2 }}>Quality Assurance & Raw Material Receiving</div>
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: 800, textAlign: "center", flex: 1, letterSpacing: "-0.01em" }}>
+                Coir Fiber Pith Receipt
+              </div>
+              <div style={{ border: "1.5px solid #000000", padding: "8px 14px", minWidth: 220, fontSize: "11px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <strong style={{ fontSize: "11.5px" }}>CR No:</strong>
+                  <span style={{ fontWeight: 700, fontSize: "11.5px" }}>{request?.qualityNo || `CR-${request?.requestNo}`}</span>
+                </div>
+                <div><strong>REF NO:</strong> FM 10 SOP 03/D1</div>
+              </div>
+            </div>
+
+            {/* Row 1: Vehicle, Consec, Date, Time, 1st, 2nd, Gross weight */}
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 14, border: "1.5px solid #000000" }}>
+              <thead>
+                <tr style={{ background: "#f8fafc", textAlign: "center", fontSize: "12px", borderBottom: "1.5px solid #000000" }}>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "15%" }}>No. (Vehicle)</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "13%" }}>CONSEC No</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "14%" }}>DATE</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "12%" }}>TIME</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "15%" }}>1st Weight</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "15%" }}>2nd Weight</th>
+                  <th style={{ border: "1.5px solid #000000", padding: "6px 8px", width: "16%" }}>Gross Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ textAlign: "center", fontWeight: "bold", fontSize: "12.5px" }}>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.vehicleNo || "-"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.consecNo || "01"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.date || "-"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.time1 || "-"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.firstWeight ? `${request.firstWeight} kg` : "-"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px" }}>{request?.secondWeight ? `${request.secondWeight} kg` : "-"}</td>
+                  <td style={{ border: "1.5px solid #000000", padding: "6px 8px", color: "#10b981", fontSize: "13.5px" }}>
+                    {request?.netWeight ? `${request.netWeight} kg` : "-"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Row 2: Contractor Details (Left) & Deductions/Rates (Right) */}
+            <div style={{ display: "flex", border: "1.5px solid #000000", marginBottom: 14 }}>
+              {/* Left Column */}
+              <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "10px 14px" }}>
+                <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0", width: "38%" }}>MILL</td>
+                      <td style={{ fontWeight: 600 }}>{request?.mill || "CPH-Galle"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>CONTRACT No</td>
+                      <td style={{ fontWeight: 600 }}>{request?.commodity || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>CODE No.</td>
+                      <td style={{ fontWeight: 600 }}>-</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>MILL OWNER</td>
+                      <td style={{ fontWeight: 600 }}>{request?.supplier || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>Weight By</td>
+                      <td>Weighbridge Automation</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>Received By</td>
+                      <td>{request?.requestedBy?.name || "System Office"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>Supplier rep</td>
+                      <td>{request?.supplierRep || "-"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Right Column */}
+              <div style={{ flex: 1.25, padding: "10px 14px" }}>
+                <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0", width: "36%" }}>H2O %</td>
+                      <td>
+                        <strong>{request?.h2oPercent || "9.5%"}</strong>
+                        <span style={{ marginLeft: 20, color: "#64748b", fontWeight: 700 }}>AV BAG WT:</span>
+                        <strong style={{ marginLeft: 6 }}>{request?.avBagWt || "0.1 kg"}</strong>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>Dedn/MT</td>
+                      <td>
+                        Wastage: <strong>{request?.wastage !== undefined ? request.wastage : 10} kg</strong> | Moisture: <strong>{request?.moistureCut !== undefined ? request.moistureCut : 7} kg</strong>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>RATE (PMT)</td>
+                      <td style={{ fontWeight: 700 }}>
+                        Rs. {request?.rateApproval !== undefined ? request.rateApproval.toFixed(2) : "88.00"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>PREMIUM</td>
+                      <td>-</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>OIL DEDUCTION (Rs)</td>
+                      <td>-</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "5px 0" }}>DEDUCTION (Adv)</td>
+                      <td style={{ fontWeight: 700 }}>
+                        Rs. {request?.deduction !== undefined ? request.deduction.toFixed(2) : "0.00"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "6px 0", color: "#10b981", fontSize: "13.5px" }}>NET VALUE (Rs)</td>
+                      <td style={{ fontWeight: 900, color: "#10b981", fontSize: "15px" }}>
+                        Rs. {request?.netPayment ? request.netPayment.toLocaleString(undefined, {minimumFractionDigits: 2}) : liveNetPayment.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Row 3: Amount in Words */}
+            <div style={{ border: "1.5px solid #000000", padding: "10px 14px", marginBottom: 14, fontSize: "12px", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 800, whiteSpace: "nowrap" }}>Amount (in words):</span>
+              <span style={{ fontStyle: "italic", fontWeight: 700, color: "#1e293b" }}>{amountInWords}</span>
+            </div>
+
+            {/* Row 4: Quality Sample Parameters (Left) & Payment Outcomes (Right) */}
+            <div style={{ display: "flex", border: "1.5px solid #000000", marginBottom: 14 }}>
+              {/* Quality Sample Parameters */}
+              <div style={{ flex: 1.6, borderRight: "1.5px solid #000000", padding: "10px 12px" }}>
+                <div style={{ fontWeight: 800, fontSize: "11px", marginBottom: 8, textTransform: "uppercase" }}>
+                  SAMPLE EVALUATION PARAMETERS
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "center" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #000000" }}>
+                      <th style={{ padding: "4px 3px" }}>Sample Lot</th>
+                      <th style={{ padding: "4px 3px" }}>Sand%</th>
+                      <th style={{ padding: "4px 3px" }}>+1/4"+3/8"%</th>
+                      <th style={{ padding: "4px 3px" }}>FM%</th>
+                      <th style={{ padding: "4px 3px" }}>Mo%Rig</th>
+                      <th style={{ padding: "4px 3px" }}>Probe%</th>
+                      <th style={{ padding: "4px 3px" }}>EC</th>
+                      <th style={{ padding: "4px 3px" }}>pH</th>
+                      <th style={{ padding: "4px 3px" }}>BSBD</th>
+                      <th style={{ padding: "4px 3px" }}>Box</th>
+                      <th style={{ padding: "4px 3px" }}>BD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {samples.map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid #cbd5e1" }}>
+                        <td style={{ padding: "4px 2px", fontWeight: 700 }}>{row.sampleLotNo}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.sand ? `${row.sand}%` : "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.sieve1438 ? `${row.sieve1438}%` : "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.fm ? `${row.fm}%` : "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.moRig ? `${row.moRig}%` : "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.avgMoistProbe ? `${row.avgMoistProbe}%` : "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.ec || "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.ph || "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.bsbd || "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.box || "-"}</td>
+                        <td style={{ padding: "4px 2px" }}>{row.bd || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Payment Settled Outcomes */}
+              <div style={{ flex: 1, padding: "10px 14px" }}>
+                <div style={{ fontWeight: 800, fontSize: "11px", marginBottom: 8, textTransform: "uppercase" }}>
+                  PAYMENT SETTLED OUTCOMES
+                </div>
+                <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "4px 0", width: "42%" }}>PAYMENT MODE</td>
+                      <td style={{ fontWeight: 700 }}>{request?.paymentMode || "Cheque"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "4px 0" }}>Cheque No</td>
+                      <td style={{ fontWeight: 600 }}>{request?.chequeNo || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "4px 0" }}>Received Name</td>
+                      <td style={{ fontWeight: 600 }}>{request?.receivedByName || request?.supplier || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: 800, padding: "4px 0" }}>NIC No.</td>
+                      <td style={{ fontWeight: 600 }}>{request?.nicNo || "-"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Row 5: Signatures Block */}
+            <div style={{ display: "flex", border: "1.5px solid #000000", minHeight: "85px" }}>
+              <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ fontWeight: 800, fontSize: "11px" }}>QC By (Sign)</div>
+                <div style={{ fontStyle: "italic", fontSize: "14px", color: "#1e40af", fontWeight: 700 }}>
+                  {request?.qcBy?.name || "...................."}
+                </div>
+                <div style={{ fontSize: "9.5px", color: "#64748b" }}>Date: {formatDate(request?.qcBy?.timestamp)}</div>
+              </div>
+              
+              <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ fontWeight: 800, fontSize: "11px" }}>Payee Identified by</div>
+                <div style={{ fontStyle: "italic", fontSize: "14px", color: "#1e40af", fontWeight: 700 }}>
+                  {request?.financeBy?.name || "...................."}
+                </div>
+                <div style={{ fontSize: "9.5px", color: "#64748b" }}>Date: {formatDate(request?.financeBy?.timestamp)}</div>
+              </div>
+              
+              <div style={{ flex: 1.2, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ fontWeight: 800, fontSize: "11px" }}>Payee / Authorised by</div>
+                <div style={{ fontStyle: "italic", fontSize: "14px", color: "#1e40af", fontWeight: 700 }}>
+                  {request?.financeBy?.name || "...................."}
+                </div>
+                <div style={{ fontSize: "9.5px", color: "#64748b" }}>Date: {formatDate(request?.financeBy?.timestamp)}</div>
+              </div>
+            </div>
+
+            {/* Copy distribution footer */}
+            <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 10, fontSize: "9.5px", color: "#64748b", fontStyle: "italic" }}>
+              <span>White: Original to Supplier</span> • 
+              <span>Blue: Payment Copy</span> • 
+              <span>Pink: Accounts Copy</span> • 
+              <span>Yellow: Premium Copy</span> • 
+              <span>Green: Book Copy</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sticky Action Bar */}
+      <div className="sticky-action-bar">
+        <Space wrap size="middle">
           {canEditQuality && (
             <Button 
               type="primary" 
               icon={<SaveOutlined />} 
               onClick={submitQuality}
               loading={saving}
-              style={{ background: "#a855f7", border: "none", fontWeight: 700 }}
+              style={{ background: "#8b5cf6", border: "none", fontWeight: 700, borderRadius: 8 }}
             >
-              Save Quality
+              Save Quality Lab Data
             </Button>
           )}
 
@@ -410,7 +1112,7 @@ export default function RequestDetails() {
                 icon={<SaveOutlined />} 
                 onClick={() => submitFinance(false)}
                 loading={saving}
-                style={{ fontWeight: 700, borderColor: "#10b981", color: "#10b981" }}
+                style={{ fontWeight: 700, borderColor: "#10b981", color: "#10b981", borderRadius: 8 }}
               >
                 Save Finance Draft
               </Button>
@@ -419,429 +1121,19 @@ export default function RequestDetails() {
                 icon={<CheckCircleOutlined />} 
                 onClick={() => submitFinance(true)}
                 loading={saving}
-                style={{ background: "#10b981", border: "none", fontWeight: 700 }}
+                style={{ background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", border: "none", fontWeight: 700, borderRadius: 8 }}
               >
-                Complete Requisition
+                Complete & Finalize
               </Button>
             </>
           )}
 
           {isCompleted && (
-            <span style={{ fontWeight: 800, padding: "4px 12px", border: "1.5px solid #059669", color: "#059669", borderRadius: 4, textTransform: "uppercase", fontSize: "11px" }}>
-              ✓ Request Fully Finalized
-            </span>
+            <Tag color="success" style={{ fontWeight: 800, padding: "6px 12px", fontSize: "0.82rem" }}>
+              ✓ Finalized & Locked
+            </Tag>
           )}
         </Space>
-      </div>
-
-      {/* Main unified paper layout */}
-      <div className="receipt-paper">
-        <Form form={form} component={false}>
-          {/* Header Row */}
-          <div className="receipt-header-row">
-            <div style={{ width: 250 }}>
-              <div style={{ fontWeight: 800, fontSize: "14px" }}>HAYLEYS AVENTURA (PVT) LTD</div>
-              <div style={{ fontSize: "10px", color: "#64748b" }}>Quality Assurance & raw Material Receiving</div>
-            </div>
-            <div className="receipt-title">Coir Fiber Pith Receipt</div>
-            <div className="receipt-meta-box">
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontWeight: 800 }}>CR No:</span>
-                {canEditQuality ? (
-                  <Form.Item name="qualityNo" noStyle>
-                    <Input className="input-line" style={{ width: 100, height: 18 }} />
-                  </Form.Item>
-                ) : (
-                  <span className="read-only-val">{request.qualityNo || `CR-${request.requestNo}`}</span>
-                )}
-              </div>
-              <div><span style={{ fontWeight: 800 }}>REF NO:</span> FM 10 SOP 03/D1</div>
-            </div>
-          </div>
-
-          {/* Table Row 1: Vehicle No, Consec, Date, Time, 1st, 2nd, Gross weight */}
-          <table className="pith-receipt-table">
-            <thead>
-              <tr>
-                <th style={{ width: "15%" }}>No.</th>
-                <th style={{ width: "12%" }}>CONSEC No</th>
-                <th style={{ width: "13%" }}>DATE</th>
-                <th style={{ width: "12%" }}>TIME</th>
-                <th style={{ width: "16%" }}>1st Weight</th>
-                <th style={{ width: "16%" }}>2nd Weight</th>
-                <th style={{ width: "16%" }}>Gross Weight</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ textAlign: "center", fontWeight: "bold" }}>
-                <td><span className="read-only-val">{request.vehicleNo}</span></td>
-                <td>
-                  {canEditQuality ? (
-                    <Form.Item name="consecNo" noStyle><Input className="input-line" style={{ textAlign: "center" }} /></Form.Item>
-                  ) : (
-                    <span className="read-only-val">{request.consecNo || "-"}</span>
-                  )}
-                </td>
-                <td><span className="read-only-val">{request.date}</span></td>
-                <td>
-                  {canEditQuality ? (
-                    <Form.Item name="time1" noStyle><Input className="input-line" style={{ textAlign: "center" }} /></Form.Item>
-                  ) : (
-                    <span className="read-only-val">{request.time1 || "-"}</span>
-                  )}
-                </td>
-                <td><span className="read-only-val">{request.firstWeight} kg</span></td>
-                <td><span className="read-only-val">{request.secondWeight} kg</span></td>
-                <td><span className="read-only-val" style={{ color: "#10b981", fontSize: "14px" }}>{request.netWeight} kg</span></td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Table Row 2: Main Body Split into Contractor (Left) and Billing calculations (Right) */}
-          <div style={{ display: "flex", gap: 0, border: "1.5px solid #000000", borderTop: "none", marginBottom: 12 }}>
-            {/* Left section: Contractor Details */}
-            <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "10px" }}>
-              <table className="nested-grid-table">
-                <tbody>
-                  <tr>
-                    <td style={{ width: "40%", fontWeight: 800 }}>MILL</td>
-                    <td>
-                      {canEditQuality ? (
-                        <Form.Item name="mill" noStyle><Input className="input-line" /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.mill || "CPH-Galle"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>CONTRACT No</td>
-                    <td><span className="read-only-val">{request.commodity}</span></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>CODE No.</td>
-                    <td><span className="read-only-val">-</span></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>MILL OWNER</td>
-                    <td><span className="read-only-val">{request.supplier}</span></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Weight By</td>
-                    <td><span className="read-only-val">Weighbridge Automation</span></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Received By</td>
-                    <td><span className="read-only-val">{request.requestedBy?.name || "System Office"}</span></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Supplier rep</td>
-                    <td>
-                      {canEditQuality ? (
-                        <Form.Item name="supplierRep" noStyle><Input className="input-line" /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.supplierRep || "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Right section: Deductions, calculations, and Payout Rates */}
-            <div style={{ flex: 1.2, padding: "10px" }}>
-              <table className="nested-grid-table">
-                <tbody>
-                  <tr>
-                    <td style={{ width: "40%", fontWeight: 800 }}>H2O %</td>
-                    <td colspan="2">
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        {canEditQuality ? (
-                          <Form.Item name="h2oPercent" noStyle><Input className="input-line" style={{ width: 80 }} placeholder="9.5%" /></Form.Item>
-                        ) : (
-                          <span className="read-only-val">{request.h2oPercent || "9.5%"}</span>
-                        )}
-                        <span style={{ fontSize: "11px", color: "#64748b" }}>AV BAG WT:</span>
-                        {canEditQuality ? (
-                          <Form.Item name="avBagWt" noStyle><Input className="input-line" style={{ width: 80 }} placeholder="0.1 kg" /></Form.Item>
-                        ) : (
-                          <span className="read-only-val">{request.avBagWt || "0.1 kg"}</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Dedn/MT</td>
-                    <td colspan="2">
-                      <div style={{ display: "flex", gap: 12, width: "100%" }}>
-                        <div>
-                          <span style={{ fontSize: "11px", display: "block", color: "#64748b" }}>Wastage cut</span>
-                          {canEditFinance ? (
-                            <Form.Item name="wastage" noStyle><InputNumber className="input-line" onChange={handleFinanceCalc} /></Form.Item>
-                          ) : (
-                            <span className="read-only-val">{request.wastage !== undefined ? `${request.wastage} kg` : "-"}</span>
-                          )}
-                        </div>
-                        <div>
-                          <span style={{ fontSize: "11px", display: "block", color: "#64748b" }}>Moisture cut</span>
-                          {canEditFinance ? (
-                            <Form.Item name="moistureCut" noStyle><InputNumber className="input-line" onChange={handleFinanceCalc} /></Form.Item>
-                          ) : (
-                            <span className="read-only-val">{request.moistureCut !== undefined ? `${request.moistureCut} kg` : "-"}</span>
-                          )}
-                        </div>
-                        <div>
-                          <span style={{ fontSize: "11px", display: "block", color: "#64748b" }}>Net Weight</span>
-                          <span className="read-only-val" style={{ color: "#10b981" }}>{request.netWeightQty || "-"} kg</span>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>RATE (PMT)</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="rateApproval" noStyle><InputNumber className="input-line" onChange={handleFinanceCalc} /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.rateApproval !== undefined ? `Rs. ${request.rateApproval.toFixed(2)}` : "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>PREMIUM</td>
-                    <td>-</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>OIL DEDUCTION (Rs)</td>
-                    <td>-</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>DEDUCTION (Adv)</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="deduction" noStyle><InputNumber className="input-line" onChange={handleFinanceCalc} /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.deduction !== undefined ? `Rs. ${request.deduction.toFixed(2)}` : "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800, fontSize: "14px", color: "#10b981" }}>NET VALUE (Rs)</td>
-                    <td>
-                      <span className="read-only-val" style={{ fontSize: "16px", color: "#10b981" }}>
-                        {request.netPayment ? `Rs. ${request.netPayment.toLocaleString(undefined, {minimumFractionDigits: 2})}` : "-"}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Table Row 3: Amount in words (full span border box) */}
-          <div style={{ border: "1.5px solid #000000", padding: "10px", marginBottom: 12 }}>
-            <span style={{ fontWeight: 800, marginRight: 10 }}>Amount (in words):</span>
-            <span className="read-only-val" style={{ textTransform: "capitalize" }}>
-              {request.netPayment 
-                ? "Forty seven thousand seven hundred eighty four rupees and fifty cents only" 
-                : "...................................................................................................................................................."}
-            </span>
-          </div>
-
-          {/* Table Row 4: Split bottom block (Samples on Left, Payment outcomes on Right) */}
-          <div style={{ display: "flex", gap: 0, border: "1.5px solid #000000", borderTop: "none", marginBottom: 20 }}>
-            {/* Left Box: Quality Sample parameter grid */}
-            <div style={{ flex: 1.5, borderRight: "1.5px solid #000000", padding: "10px" }}>
-              <div style={{ fontWeight: 800, marginBottom: 8, fontSize: "12px", textTransform: "uppercase" }}>Sample evaluation parameters</div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1.5px solid #000000" }}>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>Sample lot</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>Sand%</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>+1/4"+3/8"%</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>FM%</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>Mo%Rig</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>Probe%</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>EC</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>pH</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>BSBD</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>Box</th>
-                    <th style={{ background: "#f8fafc", fontSize: "10px", padding: "4px" }}>BD</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {samples.map((row, idx) => (
-                    <tr key={idx} style={{ borderBottom: "1px solid #cbd5e1" }}>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.sampleLotNo} onChange={(e) => handleSampleCellChange(idx, "sampleLotNo", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.sampleLotNo}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.sand} onChange={(e) => handleSampleCellChange(idx, "sand", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.sand ? `${row.sand}%` : "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.sieve1438} onChange={(e) => handleSampleCellChange(idx, "sieve1438", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.sieve1438 ? `${row.sieve1438}%` : "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.fm} onChange={(e) => handleSampleCellChange(idx, "fm", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.fm ? `${row.fm}%` : "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.moRig} onChange={(e) => handleSampleCellChange(idx, "moRig", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.moRig ? `${row.moRig}%` : "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.avgMoistProbe} onChange={(e) => handleSampleCellChange(idx, "avgMoistProbe", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.avgMoistProbe ? `${row.avgMoistProbe}%` : "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.ec} onChange={(e) => handleSampleCellChange(idx, "ec", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.ec || "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.ph} onChange={(e) => handleSampleCellChange(idx, "ph", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.ph || "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.bsbd} onChange={(e) => handleSampleCellChange(idx, "bsbd", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.bsbd || "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.box} onChange={(e) => handleSampleCellChange(idx, "box", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.box || "-"}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "4px", textAlign: "center" }}>
-                        {canEditQuality ? (
-                          <Input value={row.bd} onChange={(e) => handleSampleCellChange(idx, "bd", e.target.value)} className="input-line" style={{ textAlign: "center" }} />
-                        ) : (
-                          <span className="read-only-val">{row.bd || "-"}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Right Box: Finance & Payment settlements */}
-            <div style={{ flex: 1, padding: "10px" }}>
-              <div style={{ fontWeight: 800, marginBottom: 8, fontSize: "12px", textTransform: "uppercase" }}>Payment Settled outcomes</div>
-              
-              <table className="nested-grid-table">
-                <tbody>
-                  <tr>
-                    <td style={{ width: "40%", fontWeight: 800 }}>PAYMENT MODE</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="paymentMode" noStyle>
-                          <Radio.Group size="small">
-                            <Radio value="Cheque">CHQ</Radio>
-                            <Radio value="Cash">CASH</Radio>
-                            <Radio value="DPS">DPS</Radio>
-                          </Radio.Group>
-                        </Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.paymentMode || "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Cheque No</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="chequeNo" noStyle><Input className="input-line" /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.chequeNo || "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>Received Name</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="receivedByName" noStyle><Input className="input-line" /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.receivedByName || "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 800 }}>NIC No.</td>
-                    <td>
-                      {canEditFinance ? (
-                        <Form.Item name="nicNo" noStyle><Input className="input-line" /></Form.Item>
-                      ) : (
-                        <span className="read-only-val">{request.nicNo || "-"}</span>
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Table Row 5: Signatures Block (QC By, Payee Identified, Authorised) */}
-          <div style={{ display: "flex", border: "1.5px solid #000000", minHeight: "100px" }}>
-            <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "10px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 800, fontSize: "11px" }}>QC By (Sign)</div>
-              <div className="signature-font">....................</div>
-              <div style={{ fontSize: "10px", color: "#64748b" }}>Date: {formatDate(request.qcBy?.timestamp)}</div>
-            </div>
-            
-            <div style={{ flex: 1, borderRight: "1.5px solid #000000", padding: "10px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 800, fontSize: "11px" }}>Payee Identified by</div>
-              <div className="signature-font">....................</div>
-              <div style={{ fontSize: "10px", color: "#64748b" }}>Date: {formatDate(request.financeBy?.timestamp)}</div>
-            </div>
-            
-            <div style={{ flex: 1.2, padding: "10px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 800, fontSize: "11px" }}>Payee / Authorised by</div>
-              <div className="signature-font">....................</div>
-              <div style={{ fontSize: "10px", color: "#64748b" }}>Date: {formatDate(request.financeBy?.timestamp)}</div>
-            </div>
-          </div>
-
-          {/* Copies subtitle */}
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 8, fontSize: "10px", color: "#64748b", fontStyle: "italic" }}>
-            <span>Original to Supplier (White)</span> • 
-            <span>Payment Copy (Blue)</span> • 
-            <span>Accounts Copy (Pink)</span> • 
-            <span>Premium Copy (Yellow)</span> • 
-            <span>Book Copy (Green)</span>
-          </div>
-
-        </Form>
       </div>
     </div>
   );

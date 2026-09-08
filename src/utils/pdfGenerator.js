@@ -4,21 +4,71 @@ import { jsPDF } from "jspdf";
  * Helper to safely format Firestore Timestamps, JS Dates, and ISO strings
  */
 function formatDate(timestamp) {
-  if (!timestamp) return "";
+  if (!timestamp) return "-";
   try {
-    // If Firestore Timestamp
     if (timestamp && typeof timestamp.toDate === "function") {
       return timestamp.toDate().toLocaleDateString();
     }
-    // If timestamp has seconds/nanoseconds fields (sometimes serialized)
     if (timestamp && timestamp.seconds !== undefined) {
       return new Date(timestamp.seconds * 1000).toLocaleDateString();
     }
     const d = new Date(timestamp);
-    return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+    return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
   } catch (e) {
-    return "";
+    return "-";
   }
+}
+
+/**
+ * Converts numbers into formal capitalized English words
+ */
+function numberToWords(num) {
+  if (!num || isNaN(num)) return "Zero Rupees Only";
+  const wholePart = Math.floor(num);
+  const cents = Math.round((num - wholePart) * 100);
+  
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+                "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function convertChunk(n) {
+    let str = "";
+    if (n >= 100) {
+      str += ones[Math.floor(n / 100)] + " Hundred ";
+      n %= 100;
+    }
+    if (n >= 20) {
+      str += tens[Math.floor(n / 10)] + " ";
+      n %= 10;
+    }
+    if (n > 0) {
+      str += ones[n] + " ";
+    }
+    return str.trim();
+  }
+
+  let words = "";
+  if (wholePart >= 10000000) {
+    words += convertChunk(Math.floor(wholePart / 10000000)) + " Crore ";
+    num %= 10000000;
+  }
+  if (wholePart >= 100000) {
+    words += convertChunk(Math.floor(wholePart / 100000)) + " Lakh ";
+    num %= 100000;
+  }
+  if (wholePart >= 1000) {
+    words += convertChunk(Math.floor(wholePart / 1000)) + " Thousand ";
+    num %= 1000;
+  }
+  if (wholePart > 0) {
+    words += convertChunk(wholePart);
+  }
+
+  let result = words.trim() + " Rupees";
+  if (cents > 0) {
+    result += " and " + convertChunk(cents) + " Cents";
+  }
+  return result + " Only";
 }
 
 /**
@@ -44,7 +94,7 @@ export async function downloadReceiptPDF(request) {
   doc.text("Coir Fiber Pith Receipt", 148, 18, { align: "center" });
 
   doc.setFontSize(9);
-  doc.text(`CR No: ${request.qualityNo || "52062"}`, 235, 18);
+  doc.text(`CR No: ${request.qualityNo || `CR-${request.requestNo || "52062"}`}`, 235, 18);
   
   doc.setFont("times", "normal");
   doc.setFontSize(8);
@@ -74,7 +124,7 @@ export async function downloadReceiptPDF(request) {
 
   doc.setFont("times", "normal");
   doc.text(request.vehicleNo || "-", 12, 35);
-  doc.text(request.consecNo || "-", 52, 35);
+  doc.text(request.consecNo || "01", 52, 35);
   doc.text(request.date || "-", 82, 35);
   doc.text(request.time1 || "-", 117, 35);
   doc.text(request.firstWeight ? `${request.firstWeight} kg` : "-", 152, 35);
@@ -129,8 +179,8 @@ export async function downloadReceiptPDF(request) {
   doc.text("Dedn/MT", 150, y);
   doc.setFont("times", "normal");
   doc.setFontSize(7.5);
-  doc.text(`Wastage: ${request.wastage !== undefined ? request.wastage : "-"} kg`, 180, y - 1.5);
-  doc.text(`Moisture: ${request.moistureCut !== undefined ? request.moistureCut : "-"} kg`, 180, y + 2);
+  doc.text(`Wastage: ${request.wastage !== undefined ? request.wastage : 10} kg`, 180, y - 1.5);
+  doc.text(`Moisture: ${request.moistureCut !== undefined ? request.moistureCut : 7} kg`, 180, y + 2);
   doc.setFont("times", "bold");
   doc.setFontSize(8.5);
   doc.text("Net Weight:", 215, y);
@@ -143,7 +193,7 @@ export async function downloadReceiptPDF(request) {
   doc.setFont("times", "bold");
   doc.text("RATE (PMT)", 150, y);
   doc.setFont("times", "normal");
-  doc.text(request.rateApproval !== undefined ? `Rs. ${request.rateApproval.toFixed(2)}` : "-", 200, y);
+  doc.text(request.rateApproval !== undefined ? `Rs. ${request.rateApproval.toFixed(2)}` : "Rs. 88.00", 200, y);
   doc.line(148, y + 2, 287, y + 2);
 
   // Premium
@@ -167,7 +217,7 @@ export async function downloadReceiptPDF(request) {
   doc.setFont("times", "bold");
   doc.text("DEDUCTION (Adv)", 150, y);
   doc.setFont("times", "normal");
-  doc.text(request.deduction !== undefined ? `Rs. ${request.deduction.toFixed(2)}` : "-", 200, y);
+  doc.text(request.deduction !== undefined ? `Rs. ${request.deduction.toFixed(2)}` : "Rs. 0.00", 200, y);
   doc.line(148, y + 2, 287, y + 2);
 
   // Net Value
@@ -181,9 +231,7 @@ export async function downloadReceiptPDF(request) {
   doc.setFont("times", "bold");
   doc.text("Amount (in words):", 12, 119);
   doc.setFont("times", "normal");
-  const words = request.netPayment 
-    ? "Forty seven thousand seven hundred eighty four rupees and fifty cents only" 
-    : "....................................................................................................................................................";
+  const words = request.netPayment ? numberToWords(request.netPayment) : "....................................................................................................................................................";
   doc.text(words, 45, 119);
   doc.line(10, 122, 287, 122);
 
@@ -247,9 +295,9 @@ export async function downloadReceiptPDF(request) {
 
   let pY = 135;
   const payItems = [
-    { label: "PAYMENT MODE", val: request.paymentMode || "-" },
+    { label: "PAYMENT MODE", val: request.paymentMode || "Cheque" },
     { label: "Cheque No", val: request.chequeNo || "-" },
-    { label: "Received Name", val: request.receivedByName || "-" },
+    { label: "Received Name", val: request.receivedByName || request.supplier || "-" },
     { label: "NIC No.", val: request.nicNo || "-" }
   ];
 
@@ -275,9 +323,9 @@ export async function downloadReceiptPDF(request) {
 
   doc.setFont("times", "italic");
   doc.setFontSize(11);
-  doc.text("....................", 12, 185);
-  doc.text("....................", 97, 185);
-  doc.text("....................", 192, 185);
+  doc.text(request.qcBy?.name || "....................", 12, 185);
+  doc.text(request.financeBy?.name || "....................", 97, 185);
+  doc.text(request.financeBy?.name || "....................", 192, 185);
 
   doc.setFont("times", "normal");
   doc.setFontSize(7.5);
