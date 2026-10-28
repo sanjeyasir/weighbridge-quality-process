@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import { DataGrid } from "@mui/x-data-grid";
 import { 
   subscribeToApiTransactions, 
-  deleteApiTransaction,
-  updateTransactionStatus,
   resetMockApiData
 } from "../../services/firebase/weighbridgeApiService";
 import { subscribeToPlants } from "../../services/firebase/plantService";
@@ -142,19 +140,6 @@ export default function WeighbridgeApiStream() {
     });
   }, [filteredData]);
 
-  // Update Status to Completed handler (lifecycle: 1st reading -> 2nd reading -> completed)
-  const handleMarkCompleted = async (tx) => {
-    const id = tx.id || tx.transaction_no;
-    try {
-      await updateTransactionStatus(id, "COMPLETED");
-      if (selectedTx && (selectedTx.id === id || selectedTx.transaction_no === id)) {
-        setSelectedTx(prev => ({ ...prev, status: "COMPLETED" }));
-      }
-      showToast(`Transaction ${tx.transaction_no} updated to Completed.`);
-    } catch (err) {
-      showToast("Failed to complete transaction.", "danger");
-    }
-  };
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -165,7 +150,6 @@ export default function WeighbridgeApiStream() {
     const headers = [
       "Transaction No",
       "Plant Code",
-      "Plant Name",
       "Status",
       "Vehicle No",
       "Driver Name",
@@ -185,7 +169,6 @@ export default function WeighbridgeApiStream() {
     const csvRows = filteredData.map(r => [
       `"${r.transaction_no || ""}"`,
       `"${r.plant_code || "HES-1"}"`,
-      `"${r.plant_name || ""}"`,
       `"${r.status || ""}"`,
       `"${r.vehicle_no || ""}"`,
       `"${r.driver_name || ""}"`,
@@ -213,20 +196,6 @@ export default function WeighbridgeApiStream() {
     showToast("Transaction data exported to CSV!");
   };
 
-  // Delete transaction record
-  const handleDelete = async (id) => {
-    if (window.confirm("Remove this transaction record from the list?")) {
-      try {
-        await deleteApiTransaction(id);
-        if (selectedTx && (selectedTx.id === id || selectedTx.transaction_no === id)) {
-          setSelectedTx(null);
-        }
-        showToast("Record removed.");
-      } catch (err) {
-        showToast("Failed to delete record.", "danger");
-      }
-    }
-  };
 
   const hasActiveFilters = searchQuery || plantFilter !== "ALL" || statusFilter !== "ALL" || directionFilter !== "ALL" || sortBy !== "newest";
 
@@ -414,44 +383,24 @@ export default function WeighbridgeApiStream() {
     {
       field: "actions",
       headerName: "Action",
-      width: 160,
+      width: 90,
       sortable: false,
       filterable: false,
       align: "center",
       headerAlign: "center",
-      renderCell: (params) => {
-        const isCompleted = params.row.status === "COMPLETED";
-        return (
-          <div className="d-flex align-items-center justify-content-center gap-1">
-            <button 
-              type="button" 
-              className="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold"
-              style={{ fontSize: "0.78rem" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedTx(params.row);
-              }}
-            >
-              View
-            </button>
-
-            {!isCompleted && (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm py-0 px-2 fw-semibold"
-                style={{ fontSize: "0.78rem" }}
-                title="Mark this transaction as Completed"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMarkCompleted(params.row);
-                }}
-              >
-                Complete
-              </button>
-            )}
-          </div>
-        );
-      }
+      renderCell: (params) => (
+        <button 
+          type="button" 
+          className="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold"
+          style={{ fontSize: "0.78rem" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedTx(params.row);
+          }}
+        >
+          View
+        </button>
+      )
     }
   ], []);
 
@@ -488,14 +437,6 @@ export default function WeighbridgeApiStream() {
           </div>
 
           <div className="d-flex align-items-center gap-2">
-            <Link
-              to="/api-docs"
-              className="btn btn-outline-secondary btn-sm px-3 fw-semibold text-decoration-none d-flex align-items-center gap-1"
-            >
-              <i className="bi bi-file-earmark-code"></i>
-              <span>Swagger Docs</span>
-            </Link>
-
             <button 
               type="button" 
               className="btn btn-primary btn-sm px-3"
@@ -757,9 +698,9 @@ export default function WeighbridgeApiStream() {
                         <td className="font-monospace fw-bold text-primary">{selectedTx.transaction_no}</td>
                       </tr>
                       <tr>
-                        <th className="bg-light text-secondary fw-semibold">Plant Code & Name</th>
+                        <th className="bg-light text-secondary fw-semibold">Plant Code</th>
                         <td className="fw-semibold text-dark">
-                          {selectedTx.plant_code || "HES-1"} {selectedTx.plant_name ? `(${selectedTx.plant_name})` : ""}
+                          {selectedTx.plant_code || "HES-1"}
                         </td>
                       </tr>
                       <tr>
@@ -791,26 +732,8 @@ export default function WeighbridgeApiStream() {
                 </div>
               </div>
 
-              {/* Modal Footer with "Update to Completed" Button */}
-              <div className="modal-footer border-top py-2 px-4 d-flex justify-content-between bg-light">
-                <button
-                  type="button"
-                  className="btn btn-outline-danger btn-sm"
-                  onClick={() => handleDelete(selectedTx.id || selectedTx.transaction_no)}
-                >
-                  Delete Record
-                </button>
-
-                <div className="d-flex align-items-center gap-2">
-                  {selectedTx.status !== "COMPLETED" && (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm px-3 fw-semibold"
-                      onClick={() => handleMarkCompleted(selectedTx)}
-                    >
-                      Update Status to Completed
-                    </button>
-                  )}
+              {/* Modal Footer */}
+              <div className="modal-footer border-top py-2 px-4 d-flex justify-content-end gap-2 bg-light">
 
                   <button
                     type="button"
@@ -833,8 +756,7 @@ export default function WeighbridgeApiStream() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
   );
 }

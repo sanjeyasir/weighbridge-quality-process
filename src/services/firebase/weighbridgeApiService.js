@@ -150,7 +150,6 @@ export function subscribeToApiTransactions(onData, onError) {
           return {
             id: docSnap.id,
             plant_code: data.plant_code || data.plant || "HES-1",
-            plant_name: data.plant_name || "Hayleys Eco Solutions Plant 1",
             ...data,
             // Format timestamps if Firestore Timestamp objects
             created_at: data.created_at?.toDate ? data.created_at.toDate().toISOString() : data.created_at,
@@ -173,14 +172,16 @@ export function subscribeToApiTransactions(onData, onError) {
 
 /**
  * Directly post / simulate an incoming Weighbridge payload from UI
- * Accepts plant_code and plant_name
+ * Accepts plant_code
  */
 export async function postWeighbridgeApiPayload(payload) {
   const isSecondWeight = payload.event_type === "SECOND_WEIGHT";
   const docId = payload.transaction_no.replace(/[/#?]/g, "_");
   const nowIso = new Date().toISOString();
-  const plantCode = (payload.plant_code || payload.plant || "HES-1").trim().toUpperCase();
-  const plantName = payload.plant_name || (plantCode === "HES-2" ? "Hayleys Eco Solutions Plant 2" : "Hayleys Eco Solutions Plant 1");
+  const plantCode = (payload.plant_code || "").trim().toUpperCase();
+  if (!plantCode) {
+    throw new Error("Plant Code is required and cannot be empty.");
+  }
 
   if (isMockMode) {
     const stored = localStorage.getItem("mock_api_transactions");
@@ -192,7 +193,6 @@ export async function postWeighbridgeApiPayload(payload) {
       id: docId,
       transaction_no: payload.transaction_no,
       plant_code: plantCode,
-      plant_name: plantName,
       event_type: payload.event_type,
       vehicle_no: payload.vehicle_no,
       supplier_name: payload.supplier_name,
@@ -229,7 +229,6 @@ export async function postWeighbridgeApiPayload(payload) {
   const dataToWrite = {
     transaction_no: payload.transaction_no,
     plant_code: plantCode,
-    plant_name: plantName,
     event_type: payload.event_type,
     vehicle_no: payload.vehicle_no,
     supplier_name: payload.supplier_name,

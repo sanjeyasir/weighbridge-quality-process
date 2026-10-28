@@ -264,9 +264,8 @@ export default function DashboardLayout({ children }) {
               <i className="bi bi-list fs-5 lh-1"></i>
             </button>
 
-            <span className="fw-bold text-dark fs-6 d-flex align-items-center gap-2">
-              <i className="bi bi-journal-check text-primary d-none d-sm-inline"></i>
-              <span>Weighbridge Operations</span>
+            <span className="fw-bold text-dark fs-6">
+              Weighbridge Operations
             </span>
           </div>
 
