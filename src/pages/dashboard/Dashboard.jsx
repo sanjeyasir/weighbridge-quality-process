@@ -1,430 +1,333 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
-import { getWeighbridgeRequests } from "../../services/firebase/weighbridgeService";
-import { 
-  Card, 
-  Col, 
-  Row, 
-  Statistic, 
-  Table, 
-  Tag, 
-  Typography, 
-  Button, 
-  Space, 
-  Steps,
-  Progress,
-  Badge
-} from "antd";
-import { 
-  PlusOutlined, 
-  EyeOutlined,
-  ContainerOutlined,
-  HourglassOutlined,
-  DollarCircleOutlined,
-  ArrowRightOutlined,
-  CheckCircleOutlined,
-  FileDoneOutlined,
-  ExperimentOutlined,
-  SafetyCertificateOutlined,
-  RightOutlined
-} from "@ant-design/icons";
-
-const { Title, Text, Paragraph } = Typography;
+import { subscribeToApiTransactions } from "../../services/firebase/weighbridgeApiService";
+import { Card, Row, Col, Table } from "react-bootstrap";
 
 export default function Dashboard() {
-  const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [requests, setRequests] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const list = await getWeighbridgeRequests();
-        setRequests(list);
-      } catch (err) {
-        console.error("Dashboard data load failed:", err);
-      } finally {
+    const unsubscribe = subscribeToApiTransactions(
+      (data) => {
+        setTransactions(data);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Dashboard weighbridge subscription error:", err);
         setLoading(false);
       }
-    }
-    loadData();
+    );
+
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
   }, []);
 
-  const totalCount = requests.length;
-  const pendingQuality = requests.filter(r => r.status === "Pending Quality").length;
-  const pendingFinance = requests.filter(r => r.status === "Pending Finance").length;
-  const completed = requests.filter(r => r.status === "Completed").length;
-  
-  // Calculate total tonnage
-  const totalKg = requests.reduce((acc, curr) => acc + (Number(curr.netWeight) || 0), 0);
-  const totalTonnage = (totalKg / 1000).toFixed(1);
+  // Summary Metrics from Weighbridge Transactions
+  const metrics = useMemo(() => {
+    const total = transactions.length;
+    const pendingSecond = transactions.filter(t => t.status === "PENDING_SECOND_WEIGHT").length;
+    const completed = transactions.filter(t => t.status === "COMPLETED").length;
+    const inbound = transactions.filter(t => t.direction === "IN").length;
+    const outbound = transactions.filter(t => t.direction === "OUT").length;
 
-  const getStatusBadge = (status) => {
-    let color = "#3b82f6";
-    let bg = "rgba(59, 130, 246, 0.08)";
-    if (status === "Pending Quality") {
-      color = "#8b5cf6";
-      bg = "rgba(139, 92, 246, 0.08)";
-    } else if (status === "Pending Finance") {
-      color = "#f59e0b";
-      bg = "rgba(245, 158, 11, 0.08)";
-    } else if (status === "Completed") {
-      color = "#10b981";
-      bg = "rgba(16, 185, 129, 0.08)";
+    const totalKg = transactions.reduce((acc, t) => acc + (Number(t.final_net_weight_kg || t.net_weight_kg) || 0), 0);
+    const totalTonnage = (totalKg / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+    // Material summary
+    const materialCounts = {};
+    transactions.forEach(t => {
+      if (t.material_name) {
+        materialCounts[t.material_name] = (materialCounts[t.material_name] || 0) + 1;
+      }
+    });
+
+    const topMaterials = Object.entries(materialCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4);
+
+    return { total, pendingSecond, completed, inbound, outbound, totalKg, totalTonnage, topMaterials };
+  }, [transactions]);
+
+  // Helper date formatter
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "—";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    } catch {
+      return dateStr;
     }
-    return (
-      <Tag 
-        style={{ 
-          color, 
-          background: bg, 
-          borderColor: "transparent",
-          fontWeight: 700,
-          borderRadius: 6,
-          padding: "2px 8px",
-          fontSize: "0.75rem"
-        }}
-      >
-        {status}
-      </Tag>
-    );
   };
 
-  const columns = [
-    {
-      title: "Request No",
-      dataIndex: "requestNo",
-      key: "requestNo",
-      render: (val, record) => (
-        <Link to={`/requests/${record.id}`} style={{ fontWeight: 700, color: "#6366f1" }}>
-          #{val}
-        </Link>
-      )
-    },
-    {
-      title: "Vehicle Reg",
-      dataIndex: "vehicleNo",
-      key: "vehicleNo",
-      render: (text) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{text}</span>
-    },
-    {
-      title: "Supplier",
-      dataIndex: "supplier",
-      key: "supplier",
-      render: (text) => <span style={{ color: "#475569" }}>{text}</span>
-    },
-    {
-      title: "Commodity",
-      dataIndex: "commodity",
-      key: "commodity",
-      render: (text) => <Tag color="default" style={{ fontWeight: 600 }}>{text}</Tag>
-    },
-    {
-      title: "Net Weight",
-      dataIndex: "netWeight",
-      key: "netWeight",
-      render: val => val ? <span style={{ fontWeight: 700, color: "#0f172a" }}>{val.toLocaleString()} kg</span> : "-"
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      render: (status) => getStatusBadge(status)
-    },
-    {
-      title: "Action",
-      key: "action",
-      align: "right",
-      render: (_, record) => (
-        <Button 
-          type="text" 
-          icon={<EyeOutlined />} 
-          onClick={() => navigate(`/requests/${record.id}`)}
-          style={{ color: "#6366f1", fontWeight: 600 }}
-        >
-          View
-        </Button>
-      )
-    }
-  ];
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Welcome Hero Banner */}
-      <div style={{
-        background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-        borderRadius: 18,
-        padding: isMobile ? "20px 16px" : "28px 32px",
-        color: "#ffffff",
-        position: "relative",
-        overflow: "hidden",
-        boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.2)"
-      }}>
-        {/* Ambient background decoration */}
-        <div style={{
-          position: "absolute",
-          top: -40,
-          right: -40,
-          width: 200,
-          height: 200,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, transparent 70%)",
-          filter: "blur(20px)"
-        }} />
-
-        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 16 }}>
-          <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 10px", borderRadius: 20, background: "rgba(255, 255, 255, 0.1)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399", marginBottom: 10 }}>
-              <span className="pulse-dot" style={{ backgroundColor: "#34d399" }} />
-              Operational Live Console
-            </div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? "1.4rem" : "1.85rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em" }}>
-              Welcome Back, {currentUser?.displayName || "Operator"}!
-            </h1>
-            <p style={{ margin: "6px 0 0 0", color: "#94a3b8", fontSize: isMobile ? "0.82rem" : "0.92rem", maxWidth: 600 }}>
-              Real-time monitoring of raw material weighbridge operations, quality sample tests, and invoice settlements.
-            </p>
-          </div>
-
-          {(currentUser?.role === "requester" || currentUser?.role === "admin") && (
-            <Button 
-              type="primary" 
-              icon={<PlusOutlined />} 
-              onClick={() => navigate("/requests/create")}
-              size="large"
-              style={{ 
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                border: "none",
-                fontWeight: 700,
-                borderRadius: 10,
-                boxShadow: "0 6px 16px rgba(16, 185, 129, 0.35)",
-                width: isMobile ? "100%" : "auto"
-              }}
-            >
-              New Ticket Requisition
-            </Button>
-          )}
+    <div className="d-flex flex-column gap-3">
+      {/* Top Header & Navigation Action */}
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-2 border-bottom">
+        <div>
+          <h4 className="fw-bold mb-0 text-dark">Dashboard Overview</h4>
+          <p className="text-secondary small mb-0">
+            Operational summary and net tonnage metrics from weighbridge transactions
+          </p>
         </div>
+
+        <button
+          type="button"
+          className="btn btn-primary btn-sm px-3 fw-semibold d-flex align-items-center gap-2"
+          onClick={() => navigate("/api-stream")}
+        >
+          <i className="bi bi-journal-text"></i>
+          <span>View All Transactions</span>
+        </button>
       </div>
 
-      {/* Analytics Metric Cards */}
-      <Row gutter={[14, 14]}>
-        <Col xs={12} sm={12} md={6}>
-          <div className="modern-card hover-lift" style={{ padding: "18px 16px", borderRadius: 16, height: "100%", background: "#ffffff", border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Total Tickets
-              </span>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(59, 130, 246, 0.1)", color: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                <ContainerOutlined />
+      {/* KPI Summary Cards from Weighbridge Transactions */}
+      <Row className="g-3">
+        {/* Total Transactions */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Total Transactions</span>
+                <div className="bg-primary bg-opacity-10 text-primary p-2 rounded-2">
+                  <i className="bi bi-journal-text fs-5"></i>
+                </div>
               </div>
-            </div>
-            <div style={{ fontSize: isMobile ? "1.5rem" : "1.9rem", fontWeight: 800, color: "#0f172a", lineHeight: 1.1 }}>
-              {loading ? "..." : totalCount}
-            </div>
-            <div style={{ marginTop: 6, fontSize: "0.74rem", color: "#64748b" }}>
-              <strong>{totalTonnage} MT</strong> Total Net Weight
-            </div>
-          </div>
+              <h3 className="fw-bold mb-1 text-dark">
+                {loading ? "..." : metrics.total}
+              </h3>
+              <div className="text-secondary small">
+                Scale transactions logged
+              </div>
+            </Card.Body>
+          </Card>
         </Col>
 
-        <Col xs={12} sm={12} md={6}>
-          <div className="modern-card hover-lift" style={{ padding: "18px 16px", borderRadius: 16, height: "100%", background: "#ffffff", border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Awaiting QC
-              </span>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(139, 92, 246, 0.1)", color: "#8b5cf6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                <ExperimentOutlined />
+        {/* Pending 2nd Weight */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Pending 2nd Weight</span>
+                <div className="bg-warning bg-opacity-10 text-warning p-2 rounded-2">
+                  <i className="bi bi-hourglass-split fs-5"></i>
+                </div>
               </div>
-            </div>
-            <div style={{ fontSize: isMobile ? "1.5rem" : "1.9rem", fontWeight: 800, color: "#8b5cf6", lineHeight: 1.1 }}>
-              {loading ? "..." : pendingQuality}
-            </div>
-            <div style={{ marginTop: 6, fontSize: "0.74rem", color: "#64748b" }}>
-              Pending Lab Parameters
-            </div>
-          </div>
+              <h3 className="fw-bold mb-1 text-warning">
+                {loading ? "..." : metrics.pendingSecond}
+              </h3>
+              <div className="text-secondary small">
+                Waiting 2nd tare/gross scale
+              </div>
+            </Card.Body>
+          </Card>
         </Col>
 
-        <Col xs={12} sm={12} md={6}>
-          <div className="modern-card hover-lift" style={{ padding: "18px 16px", borderRadius: 16, height: "100%", background: "#ffffff", border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Awaiting Finance
-              </span>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                <DollarCircleOutlined />
+        {/* Completed */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Completed Weighings</span>
+                <div className="bg-success bg-opacity-10 text-success p-2 rounded-2">
+                  <i className="bi bi-check2-circle fs-5"></i>
+                </div>
               </div>
-            </div>
-            <div style={{ fontSize: isMobile ? "1.5rem" : "1.9rem", fontWeight: 800, color: "#f59e0b", lineHeight: 1.1 }}>
-              {loading ? "..." : pendingFinance}
-            </div>
-            <div style={{ marginTop: 6, fontSize: "0.74rem", color: "#64748b" }}>
-              Pending Payout Rates
-            </div>
-          </div>
+              <h3 className="fw-bold mb-1 text-success">
+                {loading ? "..." : metrics.completed}
+              </h3>
+              <div className="text-secondary small">
+                Dual weights verified
+              </div>
+            </Card.Body>
+          </Card>
         </Col>
 
-        <Col xs={12} sm={12} md={6}>
-          <div className="modern-card hover-lift" style={{ padding: "18px 16px", borderRadius: 16, height: "100%", background: "#ffffff", border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Completed
-              </span>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(16, 185, 129, 0.1)", color: "#10b981", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                <SafetyCertificateOutlined />
+        {/* Total Net Weight */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Cumulative Net Cargo</span>
+                <div className="bg-info bg-opacity-10 text-info p-2 rounded-2">
+                  <i className="bi bi-speedometer2 fs-5"></i>
+                </div>
               </div>
-            </div>
-            <div style={{ fontSize: isMobile ? "1.5rem" : "1.9rem", fontWeight: 800, color: "#10b981", lineHeight: 1.1 }}>
-              {loading ? "..." : completed}
-            </div>
-            <div style={{ marginTop: 6, fontSize: "0.74rem", color: "#64748b" }}>
-              Verified & Settled
-            </div>
-          </div>
+              <h3 className="fw-bold mb-1 text-dark">
+                {loading ? "..." : `${metrics.totalTonnage}`} <span className="fs-6 fw-normal text-secondary">MT</span>
+              </h3>
+              <div className="text-secondary small">
+                {metrics.totalKg.toLocaleString()} KG Verified
+              </div>
+            </Card.Body>
+          </Card>
         </Col>
       </Row>
 
-      {/* Workflow Stage Tracker */}
-      <Card 
-        bordered={true} 
-        style={{ borderRadius: 16, background: "#ffffff" }}
-        styles={{ body: { padding: isMobile ? "16px 12px" : "20px 24px" } }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div>
-            <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
-              Raw Material Processing Pipeline
-            </div>
-            <div style={{ color: "#64748b", fontSize: "0.75rem" }}>
-              Standard operational stages from weighbridge arrival to final voucher disbursement
-            </div>
+      {/* Operational Direction & Material Insights */}
+      <Row className="g-3">
+        {/* Direction Breakdown */}
+        <Col xs={12} md={6}>
+          <Card className="border shadow-sm rounded-3 bg-white h-100">
+            <Card.Body className="p-3">
+              <h6 className="fw-bold text-dark mb-3">Traffic Direction Breakdown</h6>
+              <div className="row g-2 text-center">
+                <div className="col-6">
+                  <div className="p-3 border rounded-2 bg-light">
+                    <span className="badge bg-primary px-2 py-1 mb-2">INBOUND (IN)</span>
+                    <h4 className="fw-bold mb-0 text-dark">{metrics.inbound}</h4>
+                    <div className="text-secondary small mt-1">Raw Materials Inward</div>
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="p-3 border rounded-2 bg-light">
+                    <span className="badge bg-secondary px-2 py-1 mb-2">OUTBOUND (OUT)</span>
+                    <h4 className="fw-bold mb-0 text-dark">{metrics.outbound}</h4>
+                    <div className="text-secondary small mt-1">Dispatches & Outward</div>
+                  </div>
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Top Commodities Weighed */}
+        <Col xs={12} md={6}>
+          <Card className="border shadow-sm rounded-3 bg-white h-100">
+            <Card.Body className="p-3">
+              <h6 className="fw-bold text-dark mb-3">Commodity Volume Summary</h6>
+              {metrics.topMaterials.length === 0 ? (
+                <div className="text-secondary small py-3 text-center">No commodity data logged.</div>
+              ) : (
+                <div className="d-flex flex-column gap-2">
+                  {metrics.topMaterials.map(([mat, count]) => (
+                    <div key={mat} className="d-flex justify-content-between align-items-center p-2 rounded border bg-light">
+                      <span className="fw-semibold text-dark small">{mat}</span>
+                      <span className="badge bg-secondary">{count} {count === 1 ? "ticket" : "tickets"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Recent Weighbridge Transactions Summary Table */}
+      <Card className="border shadow-sm rounded-3 bg-white overflow-hidden">
+        <div className="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
+          <div className="d-flex align-items-center gap-2">
+            <h6 className="fw-bold text-dark mb-0">Latest Weighbridge Scale Records</h6>
+            <span className="badge bg-secondary">{transactions.length}</span>
           </div>
+
+          <Link to="/api-stream" className="text-primary small fw-semibold text-decoration-none">
+            Open Full Data Grid &rarr;
+          </Link>
         </div>
 
-        <Steps
-          size="small"
-          current={1}
-          responsive={true}
-          items={[
-            {
-              title: 'Weighbridge Requisition',
-              description: 'OCR & Tare Data',
-              icon: <FileDoneOutlined style={{ color: "#3b82f6" }} />
-            },
-            {
-              title: 'QC Sample Evaluation',
-              description: 'Sand%, Sieve, pH & BD',
-              icon: <ExperimentOutlined style={{ color: "#8b5cf6" }} />
-            },
-            {
-              title: 'Commercial Billing',
-              description: 'Deductions & Rate PMT',
-              icon: <DollarCircleOutlined style={{ color: "#f59e0b" }} />
-            },
-            {
-              title: 'Disbursement & Print',
-              description: 'Pith Receipt Voucher',
-              icon: <CheckCircleOutlined style={{ color: "#10b981" }} />
-            }
-          ]}
-        />
-      </Card>
-
-      {/* Recent Activity Section */}
-      <Card 
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "1rem" }}>Recent Requisition Activity</span>
-            <Badge count={requests.length} style={{ backgroundColor: "#f1f5f9", color: "#475569", fontWeight: 700 }} />
-          </div>
-        }
-        extra={
-          <Button 
-            type="link" 
-            onClick={() => navigate("/requests")} 
-            style={{ fontWeight: 700, color: "#10b981", padding: 0 }}
-          >
-            View All Records <ArrowRightOutlined />
-          </Button>
-        }
-        bordered={true}
-        style={{ borderRadius: 16, background: "#ffffff" }}
-        styles={{ body: { padding: isMobile ? 12 : 20 } }}
-      >
-        {isMobile ? (
-          /* Mobile Card List View */
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {requests.slice(0, 5).map((req) => (
-              <div
-                key={req.id}
-                onClick={() => navigate(`/requests/${req.id}`)}
-                className="mobile-record-card touch-press"
-                style={{
-                  background: "#ffffff",
-                  borderRadius: 12,
-                  padding: "14px",
-                  border: "1px solid #e2e8f0",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 800, color: "#6366f1", fontSize: "0.9rem" }}>
-                    #{req.requestNo}
-                  </span>
-                  {getStatusBadge(req.status)}
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>
-                      {req.vehicleNo}
-                    </div>
-                    <div style={{ color: "#64748b", fontSize: "0.75rem" }}>
-                      {req.supplier} • <Tag style={{ margin: 0, fontSize: "0.7rem" }}>{req.commodity}</Tag>
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 800, color: "#10b981", fontSize: "0.95rem" }}>
-                      {req.netWeight ? `${req.netWeight.toLocaleString()} kg` : "-"}
-                    </div>
-                    <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>
-                      Net Weight
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {requests.length === 0 && !loading && (
-              <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8" }}>
-                No requisitions recorded yet.
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Desktop Table View */
-          <Table 
-            columns={columns} 
-            dataSource={requests.slice(0, 5)} 
-            rowKey="id" 
-            pagination={false}
-            loading={loading}
-            scroll={{ x: 700 }}
-          />
-        )}
+        <div className="table-responsive">
+          <Table hover className="align-middle mb-0 text-nowrap" style={{ fontSize: "0.875rem" }}>
+            <thead className="table-light text-secondary text-uppercase fs-8 fw-semibold border-bottom">
+              <tr>
+                <th className="ps-3">Ticket #</th>
+                <th>Plant</th>
+                <th>Date</th>
+                <th>Vehicle</th>
+                <th>Supplier / Party</th>
+                <th>Material</th>
+                <th>Direction</th>
+                <th className="text-end">Net Weight</th>
+                <th className="text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan="9" className="text-center py-4 text-secondary">
+                    <div className="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    Loading weighbridge transactions...
+                  </td>
+                </tr>
+              ) : transactions.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="text-center py-4 text-secondary">
+                    No weighbridge transactions recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                transactions.slice(0, 6).map((tx) => {
+                  const netWeight = tx.final_net_weight_kg ?? tx.net_weight_kg;
+                  const isCompleted = tx.status === "COMPLETED";
+                  return (
+                    <tr 
+                      key={tx.id || tx.transaction_no} 
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate("/api-stream")}
+                    >
+                      <td className="ps-3">
+                        <span className="font-monospace fw-bold text-primary">
+                          {tx.transaction_no}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="font-monospace fw-semibold text-dark">
+                          {tx.plant_code || "HES-1"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-dark small">
+                          {formatDate(tx.second_weight_at || tx.first_weight_at || tx.updated_at)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="font-monospace text-dark fw-medium">
+                          {tx.vehicle_no || "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="fw-medium text-dark text-truncate d-inline-block" style={{ maxWidth: 180 }} title={tx.supplier_name}>
+                          {tx.supplier_name || "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-dark">
+                          {tx.material_name || "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={tx.direction === "IN" ? "text-primary fw-semibold" : "text-secondary fw-semibold"}>
+                          {tx.direction || "—"}
+                        </span>
+                      </td>
+                      <td className="text-end">
+                        {netWeight != null ? (
+                          <span className="font-monospace fw-bold text-success">
+                            {Number(netWeight).toLocaleString()} kg
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td 
+                        className="text-center fw-semibold small"
+                        style={{
+                          backgroundColor: isCompleted ? "#d1e7dd" : "#fff3cd",
+                          color: isCompleted ? "#0f5132" : "#664d03"
+                        }}
+                      >
+                        {isCompleted ? "Completed" : "Pending 2nd"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </Table>
+        </div>
       </Card>
     </div>
   );

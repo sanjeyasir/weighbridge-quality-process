@@ -1,45 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { useNotifications } from "../../contexts/NotificationContext";
-import { toggleMockMode } from "../../services/firebase/config";
-import { 
-  Layout, 
-  Menu, 
-  Button, 
-  Avatar, 
-  Tag, 
-  Space, 
-  Tooltip, 
-  Badge, 
-  Popover, 
-  List, 
-  Typography, 
-  Drawer,
-  Alert,
-  Dropdown
-} from "antd";
-import { 
-  MenuOutlined, 
-  DashboardOutlined, 
-  TableOutlined, 
-  PlusCircleOutlined, 
-  UserOutlined, 
-  LogoutOutlined, 
-  BellOutlined, 
-  CloudOutlined, 
-  CloudSyncOutlined,
-  BuildOutlined,
-  AppstoreOutlined,
-  CloseOutlined
-} from "@ant-design/icons";
-
-const { Header, Sider, Content } = Layout;
-const { Text } = Typography;
+import { Offcanvas, Dropdown } from "react-bootstrap";
 
 export default function DashboardLayout({ children }) {
-  const { currentUser, logout, isMockMode } = useAuth();
-  const { notifications, markAsRead, markAllAsRead } = useNotifications();
+  const { currentUser, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -48,23 +13,29 @@ export default function DashboardLayout({ children }) {
 
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
+      setIsMobile(window.innerWidth < 992);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const handleMenuClick = ({ key }) => {
-    navigate(key);
-    setMobileDrawerOpen(false);
+  const getSelectedKey = () => {
+    if (location.pathname.startsWith("/api-stream")) return "/api-stream";
+    if (location.pathname.startsWith("/plants")) return "/plants";
+    if (location.pathname.startsWith("/api-docs")) return "/api-docs";
+    if (location.pathname.startsWith("/admin/users")) return "/admin/users";
+    return "/dashboard";
   };
 
-  const getSelectedKey = () => {
-    if (location.pathname.startsWith("/requests/create")) return "/requests/create";
-    if (location.pathname.startsWith("/requests/")) return "/requests";
-    return location.pathname;
+  const getRoleBadgeVariant = (role) => {
+    switch (role) {
+      case "admin": return "danger";
+      case "requester": return "primary";
+      case "quality": return "purple";
+      case "finance": return "success";
+      default: return "secondary";
+    }
   };
 
   const getRoleLabel = (role) => {
@@ -77,514 +48,351 @@ export default function DashboardLayout({ children }) {
     }
   };
 
-  const getRoleColor = (role) => {
-    switch (role) {
-      case "admin": return "#ef4444";
-      case "requester": return "#3b82f6";
-      case "quality": return "#8b5cf6";
-      case "finance": return "#10b981";
-      default: return "#64748b";
-    }
-  };
-
-  const canCreateRequest = currentUser?.role === "requester" || currentUser?.role === "admin";
   const isAdmin = currentUser?.role === "admin";
 
-  // Build menu items based on role
+  // Menu items: Dashboard Overview, Weighbridge Transactions, Plant Master, Swagger API Docs, User Accounts
   const menuItems = [
     {
       key: "/dashboard",
-      icon: <DashboardOutlined style={{ fontSize: 18 }} />,
+      icon: "bi-speedometer2",
       label: "Dashboard Overview"
     },
     {
-      key: "/requests",
-      icon: <TableOutlined style={{ fontSize: 18 }} />,
-      label: "Weighbridge Records"
+      key: "/api-stream",
+      icon: "bi-journal-text",
+      label: "Weighbridge Transactions"
+    },
+    {
+      key: "/plants",
+      icon: "bi-buildings",
+      label: "Plant Master"
+    },
+    {
+      key: "/api-docs",
+      icon: "bi-file-earmark-code",
+      label: "Swagger API Docs"
     }
   ];
-
-  if (canCreateRequest) {
-    menuItems.push({
-      key: "/requests/create",
-      icon: <PlusCircleOutlined style={{ fontSize: 18 }} />,
-      label: "New Requisition"
-    });
-  }
 
   if (isAdmin) {
     menuItems.push({
       key: "/admin/users",
-      icon: <UserOutlined style={{ fontSize: 18 }} />,
+      icon: "bi-people",
       label: "User Accounts"
     });
   }
 
-  const notificationContent = (
-    <div style={{ width: isMobile ? 280 : 340 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #f1f5f9" }}>
-        <Text strong style={{ fontSize: "0.9rem", color: "#0f172a" }}>Alerts & Notifications</Text>
-        {notifications.length > 0 && (
-          <Button type="link" size="small" onClick={markAllAsRead} style={{ padding: 0, fontSize: "0.75rem", color: "#10b981" }}>
-            Mark all read
-          </Button>
-        )}
-      </div>
-      <List
-        size="small"
-        dataSource={notifications}
-        locale={{ emptyText: <span style={{ color: "#94a3b8", fontSize: "0.8rem", padding: "16px 0", display: "block" }}>No unread alerts</span> }}
-        renderItem={item => (
-          <List.Item 
-            actions={[
-              <Button type="link" size="small" onClick={() => markAsRead(item.id)} style={{ fontSize: "0.75rem", padding: 0 }}>
-                Dismiss
-              </Button>
-            ]}
-            style={{ padding: "10px 0", borderBottom: "1px solid #f8fafc" }}
-          >
-            <List.Item.Meta
-              title={
-                <Link 
-                  to={`/requests/${item.requestId}`} 
-                  onClick={() => markAsRead(item.id)} 
-                  style={{ fontSize: "0.82rem", color: "#6366f1", fontWeight: 700 }}
-                >
-                  Ticket Notification
-                </Link>
-              }
-              description={<span style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.3, display: "block" }}>{item.message}</span>}
-            />
-          </List.Item>
-        )}
-      />
-    </div>
-  );
-
-  const userDropdownItems = {
-    items: [
-      {
-        key: "role-info",
-        label: (
-          <div style={{ padding: "4px 0" }}>
-            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.85rem" }}>{currentUser?.displayName || "Operator"}</div>
-            <div style={{ color: "#64748b", fontSize: "0.75rem" }}>{currentUser?.email}</div>
-            <div style={{ marginTop: 4 }}>
-              <Tag color={getRoleColor(currentUser?.role)} style={{ fontSize: "0.68rem", fontWeight: 700 }}>
-                {getRoleLabel(currentUser?.role)}
-              </Tag>
-            </div>
-          </div>
-        ),
-        disabled: true,
-      },
-      { type: "divider" },
-      {
-        key: "change-password",
-        label: "Change Password",
-        onClick: () => navigate("/change-password"),
-      },
-      {
-        key: "logout",
-        danger: true,
-        icon: <LogoutOutlined />,
-        label: "Sign Out",
-        onClick: logout,
-      },
-    ],
-  };
-
-  // Render navigation sidebar (Desktop or Mobile Drawer)
+  // Sidebar navigation content
   const renderNavContent = (isDrawer = false) => {
     const isExpanded = isDrawer || !collapsed;
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#ffffff" }}>
-        {/* Branding Header */}
-        <div style={{ 
-          height: 68, 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: isExpanded ? "space-between" : "center",
-          padding: isExpanded ? "0 20px" : "0", 
-          gap: 12,
-          background: "#ffffff",
-          borderBottom: "1px solid #f1f5f9"
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{
-              width: 38,
-              height: 38,
-              borderRadius: 10,
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#ffffff",
-              fontSize: 20,
-              boxShadow: "0 4px 10px rgba(16, 185, 129, 0.25)",
-              flexShrink: 0
-            }}>
-              <BuildOutlined />
+      <div className="d-flex flex-column h-100 bg-white">
+        {/* Brand header */}
+        <div 
+          className="d-flex align-items-center justify-content-between px-3 border-bottom" 
+          style={{ height: 68 }}
+        >
+          <div className="d-flex align-items-center gap-2 overflow-hidden">
+            <div 
+              className="d-flex align-items-center justify-content-center text-white rounded-3 shadow-sm flex-shrink-0"
+              style={{
+                width: 38,
+                height: 38,
+                background: "linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%)",
+                fontSize: "1.2rem"
+              }}
+            >
+              <i className="bi bi-journal-text"></i>
             </div>
             {isExpanded && (
-              <div style={{ overflow: "hidden" }}>
-                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.98rem", lineHeight: 1.2, letterSpacing: "-0.01em" }}>
+              <div className="text-truncate">
+                <div className="fw-bold text-dark lh-sm" style={{ fontSize: "0.95rem" }}>
                   Weighbridge Hub
                 </div>
-                <div style={{ color: "#10b981", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                  Quality & Billing
+                <div className="text-primary text-uppercase fw-bold" style={{ fontSize: "0.68rem", letterSpacing: "0.05em" }}>
+                  Scale Operations
                 </div>
               </div>
             )}
           </div>
 
           {isDrawer && (
-            <Button 
-              type="text" 
-              icon={<CloseOutlined />} 
+            <button 
+              type="button" 
+              className="btn-close text-reset shadow-none" 
               onClick={() => setMobileDrawerOpen(false)}
-              style={{ color: "#64748b" }}
-            />
+            ></button>
           )}
         </div>
-        
-        {/* Menu Options with clear text wording */}
-        <div style={{ flexGrow: 1, overflowY: "auto", padding: "16px 12px" }}>
-          <Menu
-            mode="inline"
-            theme="light"
-            inlineCollapsed={!isExpanded}
-            selectedKeys={[getSelectedKey()]}
-            onClick={handleMenuClick}
-            items={menuItems}
-            style={{ 
-              background: "transparent", 
-              border: "none",
-              fontWeight: 600,
-              fontSize: "0.92rem"
-            }}
-          />
+
+        {/* Menu Items */}
+        <div className="flex-grow-1 overflow-auto py-3 px-2">
+          <ul className="nav nav-pills flex-column gap-1">
+            {menuItems.map((item) => {
+              const active = getSelectedKey() === item.key;
+              return (
+                <li key={item.key} className="nav-item">
+                  <button
+                    type="button"
+                    className={`nav-link w-100 text-start d-flex align-items-center gap-3 py-2 px-3 rounded-2 fw-semibold border-0 ${
+                      active 
+                        ? "bg-primary text-white shadow-sm" 
+                        : "text-secondary bg-transparent hover-bg-light"
+                    }`}
+                    style={{ fontSize: "0.9rem", transition: "all 0.15s ease-in-out" }}
+                    onClick={() => {
+                      navigate(item.key);
+                      if (isDrawer) setMobileDrawerOpen(false);
+                    }}
+                    title={!isExpanded ? item.label : undefined}
+                  >
+                    <i className={`bi ${item.icon} fs-5`}></i>
+                    {isExpanded && <span className="text-truncate">{item.label}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
-        {/* User Footer Profile & Sign out with full wording */}
-        <div style={{ 
-          padding: isExpanded ? "18px 16px" : "12px", 
-          borderTop: "1px solid #f1f5f9",
-          background: "#fafbfc",
-          display: "flex", 
-          flexDirection: "column", 
-          gap: 12 
-        }}>
+        {/* User profile footer */}
+        <div className="p-3 border-top bg-light">
           {isExpanded ? (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800, color: "#ffffff", width: 36, height: 36 }}>
+            <div className="mb-2">
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <div 
+                  className="rounded-circle bg-primary text-white fw-bold d-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{ width: 34, height: 34, fontSize: "0.85rem" }}
+                >
                   {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
-                </Avatar>
-                <div style={{ overflow: "hidden", flex: 1 }}>
-                  <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                </div>
+                <div className="text-truncate" style={{ maxWidth: 160 }}>
+                  <div className="fw-bold text-dark small text-truncate">
                     {currentUser?.displayName || "Operator"}
                   </div>
-                  <div style={{ color: "#64748b", fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className="text-muted fs-8 text-truncate">
                     {currentUser?.email}
                   </div>
                 </div>
               </div>
-              <Tag color={getRoleColor(currentUser?.role)} style={{ fontWeight: 700, fontSize: "0.7rem", textTransform: "uppercase" }}>
+              <span className={`badge bg-${getRoleBadgeVariant(currentUser?.role)} text-uppercase fw-bold fs-8`}>
                 {getRoleLabel(currentUser?.role)}
-              </Tag>
+              </span>
             </div>
           ) : (
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800 }}>
+            <div className="d-flex justify-content-center mb-2">
+              <div 
+                className="rounded-circle bg-primary text-white fw-bold d-flex align-items-center justify-content-center"
+                style={{ width: 34, height: 34, fontSize: "0.85rem" }}
+              >
                 {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
-              </Avatar>
+              </div>
             </div>
           )}
 
-          <Button 
-            type="text" 
-            danger 
-            icon={<LogoutOutlined />} 
-            onClick={logout} 
-            style={{ 
-              background: "rgba(239, 68, 68, 0.05)", 
-              color: "#ef4444", 
-              fontWeight: 700, 
-              width: "100%", 
-              borderRadius: 8,
-              fontSize: "0.85rem",
-              height: 38,
-              padding: isExpanded ? "4px 14px" : "0"
-            }}
+          <button
+            type="button"
+            className="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2"
+            onClick={logout}
           >
-            {isExpanded && "Sign Out"}
-          </Button>
+            <i className="bi bi-box-arrow-right"></i>
+            {isExpanded && <span>Sign Out</span>}
+          </button>
         </div>
       </div>
     );
   };
 
+  const siderWidth = collapsed ? 76 : 260;
+
   return (
-    <Layout style={{ minHeight: "100vh", background: "#f8fafc" }}>
-      {/* Desktop Floating Sider */}
+    <div className="d-flex" style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
+      {/* Desktop Persistent Sidebar */}
       {!isMobile && (
-        <Sider
-          width={260}
-          collapsedWidth={76}
-          collapsible
-          collapsed={collapsed}
-          trigger={null}
-          style={{
-            position: "fixed",
-            height: "100vh",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            zIndex: 100,
-            background: "#ffffff",
-            borderRight: "1px solid #e2e8f0",
-            boxShadow: "2px 0 8px rgba(0, 0, 0, 0.02)"
+        <aside 
+          className="border-end bg-white position-fixed top-0 bottom-0 start-0 z-3"
+          style={{ 
+            width: siderWidth, 
+            transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+            boxShadow: "2px 0 8px rgba(0,0,0,0.02)"
           }}
         >
           {renderNavContent(false)}
-        </Sider>
+        </aside>
       )}
 
-      {/* Mobile Drawer (Always expanded with full wording) */}
-      <Drawer
-        placement="left"
-        closable={false}
-        onClose={() => setMobileDrawerOpen(false)}
-        open={mobileDrawerOpen}
-        styles={{ body: { padding: 0, background: "#ffffff" } }}
-        width={290}
+      {/* Mobile Offcanvas Drawer */}
+      <Offcanvas 
+        show={mobileDrawerOpen} 
+        onHide={() => setMobileDrawerOpen(false)}
+        placement="start"
+        style={{ width: 280 }}
       >
-        {renderNavContent(true)}
-      </Drawer>
+        <Offcanvas.Body className="p-0">
+          {renderNavContent(true)}
+        </Offcanvas.Body>
+      </Offcanvas>
 
-      <Layout style={{ 
-        marginLeft: isMobile ? 0 : (collapsed ? 76 : 260), 
-        minHeight: "100vh", 
-        display: "flex", 
-        flexDirection: "column",
-        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-        background: "#f8fafc"
-      }}>
-        {/* Top Header */}
-        <Header
-          style={{
-            padding: isMobile ? "0 14px" : "0 28px",
-            background: "rgba(255, 255, 255, 0.88)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            borderBottom: "1px solid #e2e8f0",
-            position: "fixed",
-            top: 0,
-            right: 0,
-            left: isMobile ? 0 : (collapsed ? 76 : 260),
-            zIndex: 90,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+      {/* Main Content Layout */}
+      <div 
+        className="d-flex flex-column flex-grow-1"
+        style={{ 
+          marginLeft: isMobile ? 0 : siderWidth,
+          transition: "margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          minWidth: 0
+        }}
+      >
+        {/* Top Header Navbar */}
+        <header 
+          className="position-fixed top-0 end-0 bg-white bg-opacity-75 border-bottom z-2 d-flex align-items-center justify-content-between px-3 px-md-4"
+          style={{ 
             height: 64,
-            transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+            left: isMobile ? 0 : siderWidth,
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            transition: "left 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
           }}
         >
-          <Space size={isMobile ? "small" : "middle"}>
-            <Button
-              type="text"
-              icon={<MenuOutlined />}
+          <div className="d-flex align-items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-light btn-sm text-dark p-2 border shadow-none"
               onClick={() => isMobile ? setMobileDrawerOpen(!mobileDrawerOpen) : setCollapsed(!collapsed)}
-              style={{ fontSize: "16px", width: 38, height: 38, color: "#0f172a", borderRadius: 8 }}
-            />
-            
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {isMobile && (
-                <div style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 6,
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#ffffff",
-                  fontSize: 14,
-                }}>
-                  <BuildOutlined />
-                </div>
-              )}
-              <span style={{ 
-                fontWeight: 800, 
-                fontSize: isMobile ? "0.95rem" : "1.05rem", 
-                color: "#0f172a", 
-                letterSpacing: "-0.01em",
-                whiteSpace: "nowrap"
-              }}>
-                {isMobile ? "Weighbridge Hub" : "Raw Material Processing"}
-              </span>
-            </div>
-          </Space>
-
-          <Space size={isMobile ? 6 : "middle"}>
-            {/* Mock Mode Status Toggle */}
-            <Tooltip title={isMockMode ? "Click to connect Live Firebase" : "Click to switch to Offline Mock Mode"}>
-              <Tag
-                icon={isMockMode ? <CloudSyncOutlined /> : <CloudOutlined />}
-                color={isMockMode ? "warning" : "success"}
-                onClick={() => toggleMockMode(!isMockMode)}
-                style={{ 
-                  cursor: "pointer", 
-                  fontWeight: 700, 
-                  padding: isMobile ? "2px 6px" : "3px 10px", 
-                  borderRadius: 8, 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 4,
-                  fontSize: isMobile ? "0.7rem" : "0.78rem",
-                  margin: 0
-                }}
-              >
-                {isMobile ? (isMockMode ? "Mock" : "Live") : (isMockMode ? "Offline Mock Mode" : "Firebase Live")}
-              </Tag>
-            </Tooltip>
-
-            {/* Notification Bell */}
-            <Popover 
-              content={notificationContent} 
-              title="Alerts" 
-              trigger="click"
-              placement="bottomRight"
+              title="Toggle Navigation"
             >
-              <Badge count={notifications.length} size="small" offset={[-2, 2]}>
-                <Button 
-                  type="text" 
-                  shape="circle" 
-                  icon={<BellOutlined style={{ fontSize: 17, color: "#334155" }} />} 
-                  style={{ width: 36, height: 36 }}
-                />
-              </Badge>
-            </Popover>
+              <i className="bi bi-list fs-5 lh-1"></i>
+            </button>
 
-            {/* Role / User Avatar dropdown */}
-            <Dropdown menu={userDropdownItems} placement="bottomRight" trigger={["click"]}>
-              <div style={{ 
-                display: "flex", 
-                alignItems: "center", 
-                gap: 8, 
-                cursor: "pointer",
-                padding: "4px 8px",
-                borderRadius: 8,
-                transition: "background 0.2s"
-              }}>
-                <Avatar style={{ backgroundColor: "#10b981", fontWeight: 800, width: 32, height: 32, fontSize: 13 }}>
+            <span className="fw-bold text-dark fs-6 d-flex align-items-center gap-2">
+              <i className="bi bi-journal-check text-primary d-none d-sm-inline"></i>
+              <span>Weighbridge Operations</span>
+            </span>
+          </div>
+
+          {/* Right Header: User Profile Dropdown (Firebase Live and Notifications removed) */}
+          <div className="d-flex align-items-center gap-2">
+            <Dropdown align="end">
+              <Dropdown.Toggle 
+                as="div" 
+                className="d-flex align-items-center gap-2 p-1 rounded-2 cursor-pointer"
+                style={{ cursor: "pointer" }}
+              >
+                <div 
+                  className="rounded-circle bg-primary text-white fw-bold d-flex align-items-center justify-content-center shadow-sm"
+                  style={{ width: 34, height: 34, fontSize: "0.85rem" }}
+                >
                   {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : "U"}
-                </Avatar>
-                {!isMobile && (
-                  <Tag 
-                    style={{ 
-                      fontWeight: 700, 
-                      textTransform: "uppercase", 
-                      fontSize: "0.68rem", 
-                      padding: "2px 8px", 
-                      margin: 0,
-                      borderColor: getRoleColor(currentUser?.role),
-                      color: getRoleColor(currentUser?.role),
-                      background: "transparent"
-                    }}
-                  >
+                </div>
+                <div className="d-none d-md-block text-start lh-sm">
+                  <div className="fw-bold text-dark small">{currentUser?.displayName || "Operator"}</div>
+                  <span className={`badge bg-${getRoleBadgeVariant(currentUser?.role)} py-0 px-1`} style={{ fontSize: "0.65rem" }}>
                     {getRoleLabel(currentUser?.role)}
-                  </Tag>
-                )}
-              </div>
-            </Dropdown>
-          </Space>
-        </Header>
+                  </span>
+                </div>
+              </Dropdown.Toggle>
 
-        {/* Content area */}
-        <Content
-          style={{
-            margin: isMobile ? "74px 12px 76px 12px" : "84px 28px 28px 28px",
-            flexGrow: 1,
-            display: "flex",
-            flexDirection: "column"
+              <Dropdown.Menu className="shadow-lg border-0 rounded-3 py-2" style={{ minWidth: 200 }}>
+                <div className="px-3 py-2 border-bottom mb-1">
+                  <div className="fw-bold small text-dark">{currentUser?.displayName}</div>
+                  <div className="text-muted fs-8 text-truncate">{currentUser?.email}</div>
+                </div>
+                <Dropdown.Item onClick={() => navigate("/change-password")} className="small py-2">
+                  <i className="bi bi-key me-2 text-muted"></i> Change Password
+                </Dropdown.Item>
+                {isAdmin && (
+                  <Dropdown.Item onClick={() => navigate("/admin/users")} className="small py-2">
+                    <i className="bi bi-people me-2 text-muted"></i> User Accounts
+                  </Dropdown.Item>
+                )}
+                <Dropdown.Divider />
+                <Dropdown.Item onClick={logout} className="small py-2 text-danger">
+                  <i className="bi bi-box-arrow-right me-2 text-danger"></i> Sign Out
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown>
+          </div>
+        </header>
+
+        {/* Content Wrapper */}
+        <main 
+          className="flex-grow-1 p-3 p-md-4" 
+          style={{ 
+            marginTop: 64,
+            marginBottom: isMobile ? 64 : 0
           }}
         >
-          {isMockMode && (
-            <Alert
-              message={
-                <span style={{ fontSize: "0.82rem" }}>
-                  <strong>Offline Mock Mode Active:</strong> Data is saved locally in browser storage. Test accounts: <code>requester@gmail.com</code>, <code>quality@gmail.com</code>, <code>finance@gmail.com</code> (pw: <code>password</code>), or <code>admin@gmail.com</code> (pw: <code>admin</code>).
-                </span>
-              }
-              type="warning"
-              showIcon
-              closable
-              style={{ marginBottom: 16, borderRadius: 10 }}
-            />
-          )}
-          
-          <div style={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
-            {children}
-          </div>
-        </Content>
+          {children}
+        </main>
 
-        {/* Mobile Bottom Dock */}
+        {/* Mobile Bottom Navigation Dock */}
         {isMobile && (
-          <nav className="mobile-bottom-dock" aria-label="Mobile Navigation">
+          <nav 
+            className="position-fixed bottom-0 start-0 end-0 bg-white border-top z-3 d-flex justify-content-around align-items-center"
+            style={{ height: 60, boxShadow: "0 -2px 10px rgba(0,0,0,0.05)" }}
+          >
             <button 
               type="button" 
-              className={`dock-item ${getSelectedKey() === "/dashboard" ? "active" : ""}`}
+              className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
+                getSelectedKey() === "/dashboard" ? "text-primary fw-bold" : "text-secondary"
+              }`}
+              style={{ fontSize: "0.72rem" }}
               onClick={() => navigate("/dashboard")}
             >
-              <DashboardOutlined className="dock-icon" />
+              <i className="bi bi-speedometer2 fs-5 lh-1"></i>
               <span>Overview</span>
             </button>
 
             <button 
               type="button" 
-              className={`dock-item ${getSelectedKey() === "/requests" ? "active" : ""}`}
-              onClick={() => navigate("/requests")}
+              className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
+                getSelectedKey() === "/api-stream" ? "text-primary fw-bold" : "text-secondary"
+              }`}
+              style={{ fontSize: "0.72rem" }}
+              onClick={() => navigate("/api-stream")}
             >
-              <TableOutlined className="dock-icon" />
-              <span>Records</span>
+              <i className="bi bi-journal-text fs-5 lh-1"></i>
+              <span>Transactions</span>
             </button>
 
-            {canCreateRequest && (
-              <button 
-                type="button" 
-                className={`dock-item ${getSelectedKey() === "/requests/create" ? "active" : ""}`}
-                onClick={() => navigate("/requests/create")}
-              >
-                <PlusCircleOutlined className="dock-icon" style={{ color: "#10b981", fontSize: 22 }} />
-                <span style={{ color: "#10b981", fontWeight: 700 }}>New Ticket</span>
-              </button>
-            )}
+            <button 
+              type="button" 
+              className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
+                getSelectedKey() === "/plants" ? "text-primary fw-bold" : "text-secondary"
+              }`}
+              style={{ fontSize: "0.72rem" }}
+              onClick={() => navigate("/plants")}
+            >
+              <i className="bi bi-buildings fs-5 lh-1"></i>
+              <span>Plants</span>
+            </button>
 
             {isAdmin && (
               <button 
                 type="button" 
-                className={`dock-item ${getSelectedKey() === "/admin/users" ? "active" : ""}`}
+                className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
+                  getSelectedKey() === "/admin/users" ? "text-primary fw-bold" : "text-secondary"
+                }`}
+                style={{ fontSize: "0.72rem" }}
                 onClick={() => navigate("/admin/users")}
               >
-                <UserOutlined className="dock-icon" />
+                <i className="bi bi-people fs-5 lh-1"></i>
                 <span>Users</span>
               </button>
             )}
 
             <button 
               type="button" 
-              className="dock-item"
+              className="btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 text-secondary"
+              style={{ fontSize: "0.72rem" }}
               onClick={() => setMobileDrawerOpen(true)}
             >
-              <AppstoreOutlined className="dock-icon" />
+              <i className="bi bi-grid-fill fs-5 lh-1"></i>
               <span>More</span>
             </button>
           </nav>
         )}
-      </Layout>
-    </Layout>
+      </div>
+    </div>
   );
 }

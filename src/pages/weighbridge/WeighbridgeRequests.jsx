@@ -2,33 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getWeighbridgeRequests, deleteRequest } from "../../services/firebase/weighbridgeService";
 import { useAuth } from "../../contexts/AuthContext";
-import { 
-  Table, 
-  Card, 
-  Tabs, 
-  Input, 
-  Space, 
-  Button, 
-  Tag, 
-  Row, 
-  Col, 
-  Popconfirm, 
-  message,
-  Badge,
-  Empty,
-  Tooltip
-} from "antd";
-import { 
-  SearchOutlined, 
-  PlusOutlined, 
-  EyeOutlined, 
-  DeleteOutlined, 
-  FileSearchOutlined,
-  CalendarOutlined,
-  CarOutlined,
-  AppstoreOutlined,
-  BarsOutlined
-} from "@ant-design/icons";
+import { toast } from "../../utils/toast";
+import { Card, Table, Nav, Badge, Button, Row, Col, Modal } from "react-bootstrap";
 
 export default function WeighbridgeRequests() {
   const { currentUser } = useAuth();
@@ -39,6 +14,7 @@ export default function WeighbridgeRequests() {
   const [activeTab, setActiveTab] = useState("all");
   const [isMobile, setIsMobile] = useState(false);
   const [viewMode, setViewMode] = useState("auto"); // "auto", "card", "table"
+  const [deleteModalId, setDeleteModalId] = useState(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -53,7 +29,7 @@ export default function WeighbridgeRequests() {
       const list = await getWeighbridgeRequests();
       setRequests(list);
     } catch (err) {
-      message.error("Failed to load requests.");
+      toast.error("Failed to load requests.");
       console.error(err);
     } finally {
       setLoading(false);
@@ -64,13 +40,15 @@ export default function WeighbridgeRequests() {
     loadRequests();
   }, []);
 
-  const handleDelete = async (id) => {
+  const confirmDelete = async () => {
+    if (!deleteModalId) return;
     try {
-      await deleteRequest(id);
-      message.success("Requisition record deleted.");
+      await deleteRequest(deleteModalId);
+      toast.success("Requisition record deleted.");
+      setDeleteModalId(null);
       loadRequests();
     } catch (err) {
-      message.error("Failed to delete request.");
+      toast.error("Failed to delete request.");
     }
   };
 
@@ -101,355 +79,325 @@ export default function WeighbridgeRequests() {
   const countCompleted = requests.filter(r => r.status === "Completed").length;
 
   const getStatusBadge = (status) => {
-    let color = "#3b82f6";
-    let bg = "rgba(59, 130, 246, 0.08)";
     if (status === "Pending Quality") {
-      color = "#8b5cf6";
-      bg = "rgba(139, 92, 246, 0.08)";
-    } else if (status === "Pending Finance") {
-      color = "#f59e0b";
-      bg = "rgba(245, 158, 11, 0.08)";
-    } else if (status === "Completed") {
-      color = "#10b981";
-      bg = "rgba(16, 185, 129, 0.08)";
+      return (
+        <span className="badge px-2 py-1 fs-8 fw-bold" style={{ backgroundColor: "rgba(139, 92, 246, 0.12)", color: "#8b5cf6" }}>
+          Pending Quality
+        </span>
+      );
     }
+    let variant = "primary";
+    if (status === "Pending Finance") variant = "warning";
+    else if (status === "Completed") variant = "success";
+
     return (
-      <Tag 
-        style={{ 
-          color, 
-          background: bg, 
-          borderColor: "transparent",
-          fontWeight: 700,
-          borderRadius: 6,
-          padding: "2px 8px",
-          fontSize: "0.75rem",
-          margin: 0
-        }}
-      >
+      <span className={`badge bg-${variant} bg-opacity-10 text-${variant} border border-${variant} border-opacity-25 px-2 py-1 fs-8 fw-bold`}>
         {status}
-      </Tag>
+      </span>
     );
   };
-
-  const columns = [
-    {
-      title: "Request No",
-      dataIndex: "requestNo",
-      key: "requestNo",
-      render: (val, record) => (
-        <Link to={`/requests/${record.id}`} style={{ fontWeight: 800, color: "#6366f1" }}>
-          #{val}
-        </Link>
-      )
-    },
-    {
-      title: "Vehicle Reg",
-      dataIndex: "vehicleNo",
-      key: "vehicleNo",
-      render: (text) => (
-        <span style={{ fontWeight: 700, color: "#0f172a", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <CarOutlined style={{ color: "#94a3b8" }} />
-          {text}
-        </span>
-      )
-    },
-    {
-      title: "Supplier & Mill",
-      dataIndex: "supplier",
-      key: "supplier",
-      render: (text, record) => (
-        <div>
-          <div style={{ fontWeight: 600, color: "#334155" }}>{text}</div>
-          {record.mill && <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{record.mill}</div>}
-        </div>
-      )
-    },
-    {
-      title: "Commodity",
-      dataIndex: "commodity",
-      key: "commodity",
-      render: (text) => <Tag color="default" style={{ fontWeight: 600 }}>{text}</Tag>
-    },
-    {
-      title: "Net Weight",
-      dataIndex: "netWeight",
-      key: "netWeight",
-      render: val => val ? <span style={{ fontWeight: 700, color: "#10b981" }}>{val.toLocaleString()} kg</span> : "-"
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      render: (status) => getStatusBadge(status)
-    },
-    {
-      title: "Date",
-      dataIndex: "createdAt",
-      key: "createdAt",
-      render: (val, record) => (
-        <span style={{ color: "#64748b", fontSize: "0.8rem" }}>
-          {record.date || (val ? new Date(val).toLocaleDateString() : "-")}
-        </span>
-      )
-    },
-    {
-      title: "Actions",
-      key: "action",
-      align: "right",
-      render: (_, record) => (
-        <Space size="small">
-          <Button 
-            type="text" 
-            icon={<EyeOutlined />} 
-            onClick={() => navigate(`/requests/${record.id}`)}
-            style={{ color: "#6366f1", fontWeight: 600 }}
-          >
-            View
-          </Button>
-          {currentUser?.role === "admin" && (
-            <Popconfirm
-              title="Delete Requisition"
-              description="Are you sure you want to permanently delete this record?"
-              onConfirm={() => handleDelete(record.id)}
-              okText="Yes"
-              cancelText="No"
-            >
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          )}
-        </Space>
-      )
-    }
-  ];
 
   const canCreate = currentUser?.role === "requester" || currentUser?.role === "admin";
   const filteredData = getFilteredRequests();
   const showCards = viewMode === "card" || (viewMode === "auto" && isMobile);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="d-flex flex-column gap-4">
       {/* Header Bar */}
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 12 }}>
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2">
         <div>
-          <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? "1.4rem" : "1.75rem", color: "#0f172a", letterSpacing: "-0.02em" }}>
-            Weighbridge Quality Records
-          </h1>
-          <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: isMobile ? "0.82rem" : "0.9rem" }}>
+          <h3 className="fw-bold text-dark mb-1">Weighbridge Quality Records</h3>
+          <p className="text-muted small mb-0">
             Track raw material weighing tickets, sample parameters, and payout invoices.
           </p>
         </div>
 
-        {canCreate && !isMobile && (
+        {canCreate && (
           <Button 
-            type="primary" 
-            icon={<PlusOutlined />} 
+            variant="primary" 
+            className="d-flex align-items-center gap-2 fw-bold px-3 py-2 rounded-3 shadow-sm"
+            style={{ backgroundColor: "#0d6efd", borderColor: "#0d6efd" }}
             onClick={() => navigate("/requests/create")}
-            size="large"
-            style={{ 
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              border: "none",
-              fontWeight: 700,
-              borderRadius: 10,
-              boxShadow: "0 4px 14px rgba(16, 185, 129, 0.3)"
-            }}
           >
-            New Ticket
+            <i className="bi bi-plus-lg fs-6"></i>
+            <span>New Ticket</span>
           </Button>
         )}
       </div>
 
-      {/* Filter and Card/Table Container */}
-      <Card 
-        bordered={true} 
-        style={{ borderRadius: 16, background: "#ffffff" }}
-        styles={{ body: { padding: isMobile ? 12 : 20 } }}
-      >
-        {/* Search & Layout toggle Row */}
-        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, marginBottom: 16, justifyContent: "space-between" }}>
-          <Input
-            placeholder="Search vehicle reg, supplier, commodity, or request #..."
-            prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-            allowClear
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            size="large"
-            style={{ borderRadius: 10, maxWidth: isMobile ? "100%" : 420 }}
-          />
+      {/* Main Card */}
+      <Card className="border-0 shadow-sm rounded-4 bg-white overflow-hidden">
+        <Card.Body className="p-3 p-md-4">
+          {/* Search & View Mode row */}
+          <div className="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+            <div className="input-group" style={{ maxWidth: 440 }}>
+              <span className="input-group-text bg-light border-end-0 text-muted">
+                <i className="bi bi-search"></i>
+              </span>
+              <input 
+                type="text" 
+                className="form-control bg-light border-start-0 py-2 fs-7" 
+                placeholder="Search vehicle reg, supplier, commodity, or ticket #..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button className="btn btn-light border" type="button" onClick={() => setSearchQuery("")}>
+                  <i className="bi bi-x"></i>
+                </button>
+              )}
+            </div>
 
-          {!isMobile && (
-            <Space>
-              <Button
-                type={viewMode === "table" || viewMode === "auto" ? "primary" : "default"}
-                icon={<BarsOutlined />}
+            <div className="d-flex gap-2">
+              <button
+                type="button"
+                className={`btn btn-sm ${viewMode === "table" || (viewMode === "auto" && !isMobile) ? "btn-primary" : "btn-light border"}`}
                 onClick={() => setViewMode("table")}
+                title="Table View"
               >
-                Table
-              </Button>
-              <Button
-                type={viewMode === "card" ? "primary" : "default"}
-                icon={<AppstoreOutlined />}
+                <i className="bi bi-list-ul me-1"></i> Table
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${viewMode === "card" || (viewMode === "auto" && isMobile) ? "btn-primary" : "btn-light border"}`}
                 onClick={() => setViewMode("card")}
+                title="Card View"
               >
-                Cards
-              </Button>
-            </Space>
-          )}
-        </div>
+                <i className="bi bi-grid-3x3-gap me-1"></i> Cards
+              </button>
+            </div>
+          </div>
 
-        {/* Status Tabs */}
-        <Tabs 
-          activeKey={activeTab} 
-          onChange={(key) => setActiveTab(key)}
-          style={{ margin: 0 }}
-          items={[
-            {
-              key: "all",
-              label: (
-                <span>
-                  All <Badge count={countAll} overflowCount={999} style={{ backgroundColor: activeTab === "all" ? "#10b981" : "#e2e8f0", color: activeTab === "all" ? "#fff" : "#475569" }} />
-                </span>
-              )
-            },
-            {
-              key: "Pending Quality",
-              label: (
-                <span>
-                  Pending QC <Badge count={countQuality} style={{ backgroundColor: activeTab === "Pending Quality" ? "#8b5cf6" : "#e2e8f0", color: activeTab === "Pending Quality" ? "#fff" : "#475569" }} />
-                </span>
-              )
-            },
-            {
-              key: "Pending Finance",
-              label: (
-                <span>
-                  Pending Finance <Badge count={countFinance} style={{ backgroundColor: activeTab === "Pending Finance" ? "#f59e0b" : "#e2e8f0", color: activeTab === "Pending Finance" ? "#fff" : "#475569" }} />
-                </span>
-              )
-            },
-            {
-              key: "Completed",
-              label: (
-                <span>
-                  Completed <Badge count={countCompleted} style={{ backgroundColor: activeTab === "Completed" ? "#10b981" : "#e2e8f0", color: activeTab === "Completed" ? "#fff" : "#475569" }} />
-                </span>
-              )
-            }
-          ]}
-        />
+          {/* Filter Nav Tabs */}
+          <Nav variant="pills" className="gap-2 mb-3 border-bottom pb-3">
+            <Nav.Item>
+              <Nav.Link 
+                active={activeTab === "all"} 
+                onClick={() => setActiveTab("all")}
+                className="py-1 px-3 small fw-semibold cursor-pointer rounded-pill"
+              >
+                All Records <span className="badge bg-light text-dark ms-1">{countAll}</span>
+              </Nav.Link>
+            </Nav.Item>
+            <Nav.Item>
+              <Nav.Link 
+                active={activeTab === "Pending Quality"} 
+                onClick={() => setActiveTab("Pending Quality")}
+                className="py-1 px-3 small fw-semibold cursor-pointer rounded-pill"
+              >
+                Pending QC <span className="badge bg-light text-dark ms-1">{countQuality}</span>
+              </Nav.Link>
+            </Nav.Item>
+            <Nav.Item>
+              <Nav.Link 
+                active={activeTab === "Pending Finance"} 
+                onClick={() => setActiveTab("Pending Finance")}
+                className="py-1 px-3 small fw-semibold cursor-pointer rounded-pill"
+              >
+                Pending Finance <span className="badge bg-light text-dark ms-1">{countFinance}</span>
+              </Nav.Link>
+            </Nav.Item>
+            <Nav.Item>
+              <Nav.Link 
+                active={activeTab === "Completed"} 
+                onClick={() => setActiveTab("Completed")}
+                className="py-1 px-3 small fw-semibold cursor-pointer rounded-pill"
+              >
+                Completed <span className="badge bg-light text-dark ms-1">{countCompleted}</span>
+              </Nav.Link>
+            </Nav.Item>
+          </Nav>
 
-        {/* Content View */}
-        {showCards ? (
-          /* Mobile / Card Grid View */
-          <div style={{ marginTop: 16 }}>
-            {filteredData.length === 0 && !loading ? (
-              <Empty description="No matching weighbridge records found." style={{ padding: "32px 0" }} />
-            ) : (
-              <Row gutter={[12, 12]}>
-                {filteredData.map((req) => (
-                  <Col xs={24} sm={12} lg={8} key={req.id}>
+          {/* Content: Cards vs Table */}
+          {showCards ? (
+            <Row className="g-3">
+              {loading ? (
+                <Col xs={12} className="text-center py-5 text-muted">
+                  <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+                  Loading weighbridge records...
+                </Col>
+              ) : filteredData.length === 0 ? (
+                <Col xs={12} className="text-center py-5 text-muted">
+                  <i className="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                  No matching weighbridge records found.
+                </Col>
+              ) : (
+                filteredData.map(req => (
+                  <Col xs={12} sm={6} lg={4} key={req.id}>
                     <div 
-                      className="mobile-record-card touch-press"
+                      className="card border h-100 rounded-3 shadow-none hover-shadow"
+                      style={{ cursor: "pointer", transition: "all 0.15s ease" }}
                       onClick={() => navigate(`/requests/${req.id}`)}
-                      style={{ 
-                        margin: 0,
-                        height: "100%",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 14,
-                        padding: "16px",
-                        background: "#ffffff"
-                      }}
                     >
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                          <span style={{ fontWeight: 800, color: "#6366f1", fontSize: "0.95rem" }}>
-                            #{req.requestNo}
-                          </span>
-                          {getStatusBadge(req.status)}
-                        </div>
-
-                        <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                          <CarOutlined style={{ color: "#94a3b8", fontSize: 15 }} />
-                          {req.vehicleNo}
-                        </div>
-
-                        <div style={{ color: "#475569", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>
-                          {req.supplier}
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-                          <Tag color="default" style={{ margin: 0, fontSize: "0.72rem", fontWeight: 600 }}>{req.commodity}</Tag>
-                          {req.mill && <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>{req.mill}</span>}
-                        </div>
-                      </div>
-
-                      <div style={{ 
-                        borderTop: "1px solid #f1f5f9", 
-                        paddingTop: 10, 
-                        display: "flex", 
-                        justifyContent: "space-between", 
-                        alignItems: "center" 
-                      }}>
+                      <div className="card-body p-3 d-flex flex-column justify-content-between">
                         <div>
-                          <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>Net Weight</div>
-                          <div style={{ fontWeight: 800, color: "#10b981", fontSize: "1rem" }}>
-                            {req.netWeight ? `${req.netWeight.toLocaleString()} kg` : "-"}
+                          <div className="d-flex justify-content-between align-items-center mb-2">
+                            <span className="fw-bold text-primary font-monospace">#{req.requestNo}</span>
+                            {getStatusBadge(req.status)}
+                          </div>
+
+                          <div className="fw-bold text-dark fs-6 d-flex align-items-center gap-2 mb-1">
+                            <i className="bi bi-truck text-secondary"></i>
+                            <span className="font-monospace">{req.vehicleNo}</span>
+                          </div>
+
+                          <div className="text-secondary small fw-semibold mb-1 text-truncate">
+                            {req.supplier}
+                          </div>
+
+                          <div className="d-flex align-items-center gap-2 mb-3">
+                            <span className="badge bg-light text-dark border">{req.commodity}</span>
+                            {req.mill && <span className="text-muted fs-8">{req.mill}</span>}
                           </div>
                         </div>
 
-                        <Button 
-                          type="primary" 
-                          size="small" 
-                          icon={<EyeOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/requests/${req.id}`);
-                          }}
-                          style={{ 
-                            background: "rgba(99, 102, 241, 0.1)", 
-                            color: "#6366f1", 
-                            border: "none", 
-                            fontWeight: 700,
-                            borderRadius: 6
-                          }}
-                        >
-                          Details
-                        </Button>
+                        <div className="pt-2 border-top d-flex justify-content-between align-items-center">
+                          <div>
+                            <span className="text-muted fs-8 d-block">Net Weight</span>
+                            <span className="fw-bold text-success font-monospace">
+                              {req.netWeight ? `${Number(req.netWeight).toLocaleString()} kg` : "-"}
+                            </span>
+                          </div>
+
+                          <Button 
+                            variant="light" 
+                            size="sm" 
+                            className="text-primary px-2 py-1 shadow-none"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/requests/${req.id}`);
+                            }}
+                          >
+                            Details <i className="bi bi-chevron-right fs-8"></i>
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </Col>
-                ))}
-              </Row>
-            )}
-          </div>
-        ) : (
-          /* Desktop Table View */
-          <div style={{ marginTop: 12 }}>
-            <Table 
-              columns={columns} 
-              dataSource={filteredData} 
-              rowKey="id" 
-              loading={loading}
-              pagination={{ pageSize: 10, showSizeChanger: true }}
-              scroll={{ x: 800 }}
-            />
-          </div>
-        )}
+                ))
+              )}
+            </Row>
+          ) : (
+            <div className="table-responsive">
+              <Table hover className="align-middle mb-0 text-nowrap" style={{ fontSize: "0.875rem" }}>
+                <thead className="table-light text-muted text-uppercase fs-8 fw-bold">
+                  <tr>
+                    <th className="ps-3">Request No</th>
+                    <th>Vehicle Reg</th>
+                    <th>Supplier & Mill</th>
+                    <th>Commodity</th>
+                    <th>Net Weight</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th className="text-end pe-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-5 text-muted">
+                        <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+                        Loading weighbridge records...
+                      </td>
+                    </tr>
+                  ) : filteredData.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-5 text-muted">
+                        <i className="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                        No matching weighbridge records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredData.map(req => (
+                      <tr key={req.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/requests/${req.id}`)}>
+                        <td className="ps-3">
+                          <Link to={`/requests/${req.id}`} className="fw-bold text-primary font-monospace text-decoration-none" onClick={(e) => e.stopPropagation()}>
+                            #{req.requestNo}
+                          </Link>
+                        </td>
+                        <td>
+                          <span className="fw-bold text-dark font-monospace d-flex align-items-center gap-1">
+                            <i className="bi bi-truck text-muted"></i>
+                            {req.vehicleNo}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="fw-semibold text-dark text-truncate" style={{ maxWidth: 180 }}>
+                            {req.supplier}
+                          </div>
+                          {req.mill && <div className="text-muted fs-8">{req.mill}</div>}
+                        </td>
+                        <td>
+                          <span className="badge bg-light text-dark border">{req.commodity}</span>
+                        </td>
+                        <td>
+                          <span className="fw-bold text-success font-monospace">
+                            {req.netWeight ? `${Number(req.netWeight).toLocaleString()} kg` : "-"}
+                          </span>
+                        </td>
+                        <td>{getStatusBadge(req.status)}</td>
+                        <td className="text-muted small">
+                          {req.date || (req.createdAt ? new Date(req.createdAt).toLocaleDateString() : "-")}
+                        </td>
+                        <td className="text-end pe-3">
+                          <div className="d-flex align-items-center justify-content-end gap-1">
+                            <Button 
+                              variant="light" 
+                              size="sm" 
+                              className="text-primary px-2 py-1 shadow-none"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/requests/${req.id}`);
+                              }}
+                              title="View Requisition"
+                            >
+                              <i className="bi bi-eye"></i>
+                            </Button>
+                            {currentUser?.role === "admin" && (
+                              <Button 
+                                variant="light" 
+                                size="sm" 
+                                className="text-danger px-2 py-1 shadow-none"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteModalId(req.id);
+                                }}
+                                title="Delete Requisition"
+                              >
+                                <i className="bi bi-trash"></i>
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </Card.Body>
       </Card>
 
-      {/* Floating Action Button for Mobile */}
-      {canCreate && isMobile && (
-        <button
-          type="button"
-          className="mobile-fab"
-          onClick={() => navigate("/requests/create")}
-          aria-label="Create New Ticket"
-        >
-          <PlusOutlined />
-        </button>
-      )}
+      {/* Delete Confirmation Modal */}
+      <Modal show={Boolean(deleteModalId)} onHide={() => setDeleteModalId(null)} centered size="sm">
+        <Modal.Header closeButton className="border-bottom py-2">
+          <Modal.Title className="fw-bold fs-6">Delete Requisition</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="py-3">
+          <p className="text-muted small mb-0">
+            Are you sure you want to permanently delete this requisition record? This action cannot be undone.
+          </p>
+        </Modal.Body>
+        <Modal.Footer className="border-top py-2">
+          <Button variant="light" size="sm" onClick={() => setDeleteModalId(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" onClick={confirmDelete}>
+            Delete
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

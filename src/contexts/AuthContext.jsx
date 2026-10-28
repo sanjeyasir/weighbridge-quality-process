@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect } from "react";
 import * as authService from "../services/firebase/authService";
 import { isMockMode } from "../services/firebase/config";
 import { useAuthStore } from "../store/authStore";
-import { Spin } from "antd";
 
 const AuthContext = createContext(null);
 
@@ -70,8 +69,11 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={value}>
       {loading ? (
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: "#f8fafc" }}>
-          <Spin size="large" tip="Loading session..." />
+        <div className="d-flex flex-column justify-content-center align-items-center min-vh-100 bg-light">
+          <div className="spinner-border text-success mb-3" style={{ width: "2.5rem", height: "2.5rem" }} role="status">
+            <span className="visually-hidden">Loading session...</span>
+          </div>
+          <div className="text-muted fw-semibold fs-7">Verifying session...</div>
         </div>
       ) : (
         children

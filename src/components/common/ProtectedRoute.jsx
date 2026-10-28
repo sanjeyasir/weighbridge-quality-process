@@ -1,16 +1,17 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { Spin } from "antd";
-
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { currentUser, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-        <Spin size="large" tip="Verifying session..." />
+      <div className="d-flex flex-column justify-content-center align-items-center min-vh-100 bg-light">
+        <div className="spinner-border text-success mb-2" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <div className="text-muted small fw-semibold">Verifying session...</div>
       </div>
     );
   }

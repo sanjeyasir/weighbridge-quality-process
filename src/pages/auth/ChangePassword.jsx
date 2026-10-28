@@ -2,19 +2,31 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { updateUserPassword } from "../../services/firebase/authService";
-import { Form, Input, Button, Card, Typography, Alert, Spin } from "antd";
-import { LockOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-
-const { Title, Text } = Typography;
+import { Card, Form, Button, Alert, Spinner } from "react-bootstrap";
 
 export default function ChangePassword() {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { logout, updateLocalProfile } = useAuth();
   const navigate = useNavigate();
 
-  const onFinish = async (values) => {
-    const { password } = values;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!password || !confirmPassword) {
+      setError("Please fill in both password fields.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match!");
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
@@ -28,122 +40,93 @@ export default function ChangePassword() {
   };
 
   return (
-    <div style={{ 
-      minHeight: "100vh", 
-      display: "flex", 
-      alignItems: "center", 
-      justifyContent: "center",
-      background: "radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%), #f8fafc",
-      padding: "20px"
-    }}>
-      <Card 
-        bordered={true}
-        style={{ 
-          width: "100%", 
-          maxWidth: 440, 
-          borderRadius: 20, 
-          boxShadow: "0 12px 35px rgba(0, 0, 0, 0.06)",
-          background: "#ffffff",
-          border: "1px solid #e2e8f0"
-        }}
-        styles={{ body: { padding: "32px 26px" } }}
-      >
-        <Spin spinning={loading} size="large" tip="Updating Password...">
-          <div style={{ marginBottom: 24, textAlign: "center" }}>
-            <div style={{
-              background: "rgba(245, 158, 11, 0.12)", 
-              color: "#f59e0b",
-              borderRadius: "16px",
-              width: 52,
-              height: 52,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 24,
-              marginBottom: 12
-            }}>
-              <SafetyCertificateOutlined />
-            </div>
-            <Title level={3} style={{ margin: 0, fontWeight: 800, color: "#0f172a" }}>
-              Set New Password
-            </Title>
-            <Text type="secondary" style={{ fontSize: "0.82rem", marginTop: 4, display: "block" }}>
-              Your operator account requires establishing a secure personal password.
-            </Text>
-          </div>
-
-          {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 18, borderRadius: 8 }} />}
-
-          <Form
-            name="change_pass_form"
-            layout="vertical"
-            requiredMark={false}
-            onFinish={onFinish}
+    <div 
+      className="d-flex align-items-center justify-content-center min-vh-100 p-3"
+      style={{
+        backgroundColor: "#f8fafc",
+        background: "radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%), #f8fafc"
+      }}
+    >
+      <Card className="border-0 shadow-lg rounded-4 p-4 p-md-5" style={{ width: "100%", maxWidth: 440 }}>
+        <div className="text-center mb-4">
+          <div 
+            className="d-inline-flex align-items-center justify-content-center text-warning bg-warning bg-opacity-10 rounded-3 mb-3"
+            style={{ width: 52, height: 52, fontSize: "1.5rem" }}
           >
-            <Form.Item
-              name="password"
-              label={<span style={{ color: "#334155", fontWeight: 700 }}>New Password</span>}
-              rules={[
-                { required: true, message: "Please enter your new password." },
-                { min: 6, message: "Password must be at least 6 characters." }
-              ]}
-            >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: "#94a3b8" }} />}
+            <i className="bi bi-shield-lock-fill"></i>
+          </div>
+          <h4 className="fw-bold text-dark mb-1">Set New Password</h4>
+          <p className="text-muted small mb-0">
+            Your operator account requires establishing a secure personal password.
+          </p>
+        </div>
+
+        {error && (
+          <Alert variant="danger" className="py-2 px-3 small rounded-3 mb-3">
+            <i className="bi bi-exclamation-triangle-fill me-2"></i>{error}
+          </Alert>
+        )}
+
+        <Form onSubmit={handleSubmit}>
+          <Form.Group className="mb-3">
+            <Form.Label className="small fw-bold text-secondary">New Password</Form.Label>
+            <div className="input-group">
+              <span className="input-group-text bg-light border-end-0 text-muted">
+                <i className="bi bi-lock"></i>
+              </span>
+              <Form.Control
+                type="password"
                 placeholder="Enter minimum 6 characters"
-                size="large"
-                style={{ borderRadius: 8 }}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-light border-start-0 py-2 fs-7"
+                required
               />
-            </Form.Item>
+            </div>
+          </Form.Group>
 
-            <Form.Item
-              name="confirmPassword"
-              label={<span style={{ color: "#334155", fontWeight: 700 }}>Confirm New Password</span>}
-              dependencies={['password']}
-              rules={[
-                { required: true, message: "Please confirm your password." },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value || getFieldValue('password') === value) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(new Error('Passwords do not match!'));
-                  },
-                }),
-              ]}
-            >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: "#94a3b8" }} />}
+          <Form.Group className="mb-4">
+            <Form.Label className="small fw-bold text-secondary">Confirm New Password</Form.Label>
+            <div className="input-group">
+              <span className="input-group-text bg-light border-end-0 text-muted">
+                <i className="bi bi-lock-fill"></i>
+              </span>
+              <Form.Control
+                type="password"
                 placeholder="Re-enter password"
-                size="large"
-                style={{ borderRadius: 8 }}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="bg-light border-start-0 py-2 fs-7"
+                required
               />
-            </Form.Item>
+            </div>
+          </Form.Group>
 
-            <Form.Item style={{ marginBottom: 12, marginTop: 24 }}>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                size="large" 
-                block
-                style={{ 
-                  height: 46, 
-                  borderRadius: 10, 
-                  fontWeight: 700, 
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  border: "none",
-                  boxShadow: "0 6px 16px rgba(16, 185, 129, 0.28)"
-                }}
-              >
-                Update & Enter Dashboard
-              </Button>
-            </Form.Item>
+          <Button 
+            type="submit" 
+            variant="primary" 
+            className="w-100 py-2 fw-bold rounded-3 shadow-sm mb-2"
+            style={{ backgroundColor: "#0d6efd", borderColor: "#0d6efd", height: 46 }}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Updating Password...
+              </>
+            ) : (
+              "Update & Enter Dashboard"
+            )}
+          </Button>
 
-            <Button type="link" block onClick={logout} style={{ color: "#64748b", fontWeight: 600 }}>
-              Cancel & Sign Out
-            </Button>
-          </Form>
-        </Spin>
+          <Button 
+            variant="link" 
+            className="w-100 text-muted text-decoration-none small fw-semibold"
+            onClick={logout}
+          >
+            Cancel & Sign Out
+          </Button>
+        </Form>
       </Card>
     </div>
   );

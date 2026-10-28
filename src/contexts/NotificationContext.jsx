@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useAuth } from "./AuthContext";
 import * as notificationService from "../services/firebase/notificationService";
-import { notification } from "antd";
+import { toast } from "../utils/toast";
 
 const NotificationContext = createContext(null);
 
@@ -10,8 +10,6 @@ export const useNotifications = () => useContext(NotificationContext);
 export const NotificationProvider = ({ children }) => {
   const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState([]);
-  const [api, contextHolder] = notification.useNotification();
-  
   const prevNotificationsRef = useRef([]);
 
   useEffect(() => {
@@ -29,13 +27,7 @@ export const NotificationProvider = ({ children }) => {
 
         if (newlyAdded.length > 0) {
           const newest = newlyAdded[0];
-          api.open({
-            message: "Workflow Alert",
-            description: newest.message,
-            placement: "bottomRight",
-            duration: 6,
-            type: "info"
-          });
+          toast.info(`Workflow Alert: ${newest.message}`);
         }
 
         setNotifications(newNotifications);
@@ -44,7 +36,7 @@ export const NotificationProvider = ({ children }) => {
     );
 
     return () => unsubscribe();
-  }, [currentUser, api]);
+  }, [currentUser]);
 
   const markAsRead = async (id) => {
     if (!currentUser) return;
@@ -64,7 +56,6 @@ export const NotificationProvider = ({ children }) => {
 
   return (
     <NotificationContext.Provider value={value}>
-      {contextHolder}
       {children}
     </NotificationContext.Provider>
   );

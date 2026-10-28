@@ -1,0 +1,170 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WeighbridgeRestApiPayload",
+  "description": "JSON Schema specification for Weighbridge REST API POST events (First and Second Weight)",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "FirstWeightEvent",
+      "description": "Sent when the operator saves the first reading (pending transaction)",
+      "type": "object",
+      "required": [
+        "event_type",
+        "transaction_no",
+        "vehicle_no",
+        "supplier_name",
+        "material_name",
+        "direction",
+        "first_weight_kg",
+        "first_weight_at"
+      ],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["FIRST_WEIGHT"],
+          "description": "Identifier indicating the first weight event"
+        },
+        "transaction_no": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Automatically generated unique transaction identifier from weighbridge system (e.g. '26-00007')"
+        },
+        "vehicle_no": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registration number of the vehicle (e.g. 'WP-1615')"
+        },
+        "supplier_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the supplier or client (e.g. 'Hayleys DPL')"
+        },
+        "material_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Material or commodity being transported (e.g. 'Coir')"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["IN", "OUT"],
+          "description": "Direction of cargo: 'IN' (goods entering) or 'OUT' (goods leaving)"
+        },
+        "first_weight_kg": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Measured first reading in kilograms (gross or tare)"
+        },
+        "first_weight_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the first weight was recorded"
+        },
+        "sub_type": {
+          "type": "string",
+          "description": "Optional category under direction (e.g. 'Purchase', 'Own Factory', 'Direct Sale', 'Wastage')"
+        },
+        "driver_name": {
+          "type": "string",
+          "description": "Optional driver name captured by the operator"
+        },
+        "remarks": {
+          "type": "string",
+          "description": "Optional operator remarks or notes"
+        }
+      },
+      "additionalProperties": true
+    },
+    {
+      "title": "SecondWeightEvent",
+      "description": "Sent when the operator saves the second reading (completed transaction for ERP)",
+      "type": "object",
+      "required": [
+        "event_type",
+        "transaction_no",
+        "vehicle_no",
+        "supplier_name",
+        "material_name",
+        "direction",
+        "first_weight_kg",
+        "second_weight_kg",
+        "net_weight_kg",
+        "final_net_weight_kg",
+        "first_weight_at",
+        "second_weight_at"
+      ],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["SECOND_WEIGHT"],
+          "description": "Identifier indicating the completed second weight event"
+        },
+        "transaction_no": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique transaction number matching the first weight event"
+        },
+        "vehicle_no": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registration number of the vehicle"
+        },
+        "supplier_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the supplier or client"
+        },
+        "material_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Material or commodity being transported"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["IN", "OUT"],
+          "description": "Direction of cargo: 'IN' or 'OUT'"
+        },
+        "first_weight_kg": {
+          "type": "number",
+          "minimum": 0,
+          "description": "First recorded weight in kilograms"
+        },
+        "second_weight_kg": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Second recorded weight in kilograms"
+        },
+        "net_weight_kg": {
+          "type": "number",
+          "description": "Net weight (|first_weight_kg - second_weight_kg|) in kilograms"
+        },
+        "final_net_weight_kg": {
+          "type": "number",
+          "description": "Final adjusted net weight after deductions (e.g. moisture cut, dirt) in kilograms"
+        },
+        "first_weight_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp for first reading"
+        },
+        "second_weight_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp for second reading"
+        },
+        "remarks": {
+          "type": "string",
+          "description": "Operator remarks or weighbridge location details"
+        },
+        "sub_type": {
+          "type": "string",
+          "description": "Optional category under direction"
+        },
+        "driver_name": {
+          "type": "string",
+          "description": "Optional driver name captured by the operator"
+        }
+      },
+      "additionalProperties": true
+    }
+  ]
+}
