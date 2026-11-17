@@ -1,31 +1,81 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DataGrid } from "@mui/x-data-grid";
 import { 
   subscribeToApiTransactions, 
   resetMockApiData
 } from "../../services/firebase/weighbridgeApiService";
 import { subscribeToPlants } from "../../services/firebase/plantService";
+import { subscribeToQualityCostingRequests } from "../../services/firebase/qualityCostingService";
 import { useAuth } from "../../contexts/AuthContext";
+
+// Modular Sub-components
+import Hes1TransactionsTab from "./components/Hes1TransactionsTab";
+import InitiateQualityCostingTab from "./components/InitiateQualityCostingTab";
+import DailyRequestsTab from "./components/DailyRequestsTab";
+import RileyToyoTemplateModal from "./components/RileyToyoTemplateModal";
+import CutPercentageAndRateLogsModal from "./components/CutPercentageAndRateLogsModal";
+import PrintableAcceptanceNoteModal from "./components/PrintableAcceptanceNoteModal";
 
 export default function WeighbridgeApiStream() {
   const { isMockMode } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Active top-level Tab ("hes1", "initiate", "daily-requests", "all")
+  // Default to "hes1" as requested by user!
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabFromUrl || "hes1");
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    setSearchParams({ tab: newTab });
+  };
+
+  // Transactions & Plants
   const [transactions, setTransactions] = useState([]);
   const [plantsList, setPlantsList] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [plantFilter, setPlantFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL"); // ALL, PENDING_SECOND_WEIGHT, SECOND_WEIGHT, COMPLETED
-  const [directionFilter, setDirectionFilter] = useState("ALL"); // ALL, IN, OUT
-  const [sortBy, setSortBy] = useState("newest"); // newest, oldest, weight_desc, weight_asc
-  
-  // Modal state
-  const [selectedTx, setSelectedTx] = useState(null);
+  // Quality & Costing Requests
+  const [qcRequests, setQcRequests] = useState([]);
+  const [qcLoading, setQcLoading] = useState(true);
+
+  // Global Toast
   const [toastMessage, setToastMessage] = useState(null);
 
-  // Subscribe to real-time transactions
+  // Filters for "All Transactions" DataGrid Tab
+  const [searchQuery, setSearchQuery] = useState("");
+  const [plantFilter, setPlantFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [directionFilter, setDirectionFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("newest");
+
+  // Modals
+  const [selectedTx, setSelectedTx] = useState(null); // All transactions view modal
+  const [templateModal, setTemplateModal] = useState({
+    show: false,
+    preselectedTx: null,
+    company: "RILEYS"
+  });
+  const [printableModal, setPrintableModal] = useState({
+    show: false,
+    request: null
+  });
+  const [logsModalOpen, setLogsModalOpen] = useState(false);
+
+  // Flash toast notification helper
+  const showToast = (text, type = "primary") => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Subscribe to real-time Weighbridge scale transactions
   useEffect(() => {
     setLoading(true);
     const unsubscribe = subscribeToApiTransactions(
@@ -55,11 +105,23 @@ export default function WeighbridgeApiStream() {
     };
   }, []);
 
-  // Flash toast notification helper
-  const showToast = (text, type = "primary") => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  // Subscribe to Quality & Costing Daily Requests
+  useEffect(() => {
+    setQcLoading(true);
+    const unsubQc = subscribeToQualityCostingRequests(
+      (data) => {
+        setQcRequests(data);
+        setQcLoading(false);
+      },
+      (err) => {
+        console.error("QC Requests listener error:", err);
+        setQcLoading(false);
+      }
+    );
+    return () => {
+      if (typeof unsubQc === "function") unsubQc();
+    };
+  }, [isMockMode]);
 
   // Helper date-time formatter
   const formatDateTime = (dateStr) => {
@@ -84,7 +146,12 @@ export default function WeighbridgeApiStream() {
     return Array.from(set).sort();
   }, [plantsList, transactions]);
 
-  // Filtered & Searched data
+  // HES-1 Transactions subset
+  const hes1Transactions = useMemo(() => {
+    return transactions.filter(t => (t.plant_code || "HES-1").toUpperCase() === "HES-1");
+  }, [transactions]);
+
+  // Filtered & Searched data for "All Transactions" DataGrid
   const filteredData = useMemo(() => {
     const filtered = transactions.filter(tx => {
       if (plantFilter !== "ALL" && (tx.plant_code || "HES-1") !== plantFilter) return false;
@@ -119,7 +186,6 @@ export default function WeighbridgeApiStream() {
         const netB = Number(b.final_net_weight_kg || b.net_weight_kg || 0);
         return netA - netB;
       }
-      // default: newest first
       return new Date(b.updated_at || b.first_weight_at || 0) - new Date(a.updated_at || a.first_weight_at || 0);
     });
   }, [transactions, plantFilter, statusFilter, directionFilter, searchQuery, sortBy]);
@@ -140,6 +206,23 @@ export default function WeighbridgeApiStream() {
     });
   }, [filteredData]);
 
+  // Launch Request Initiation Modal from a Transaction
+  const handleInitiateRequestFromTx = (tx, targetCompany = "RILEYS") => {
+    setTemplateModal({
+      show: true,
+      preselectedTx: tx,
+      company: targetCompany
+    });
+  };
+
+  // Launch Blank Initiation Modal
+  const handleOpenBlankInitiate = () => {
+    setTemplateModal({
+      show: true,
+      preselectedTx: hes1Transactions[0] || null,
+      company: "RILEYS"
+    });
+  };
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -196,7 +279,6 @@ export default function WeighbridgeApiStream() {
     showToast("Transaction data exported to CSV!");
   };
 
-
   const hasActiveFilters = searchQuery || plantFilter !== "ALL" || statusFilter !== "ALL" || directionFilter !== "ALL" || sortBy !== "newest";
 
   const clearFilters = () => {
@@ -207,7 +289,7 @@ export default function WeighbridgeApiStream() {
     setSortBy("newest");
   };
 
-  // MUI X DataGrid Columns - NO CHIPS; Only Status cell gets background color based on status
+  // MUI X DataGrid Columns
   const columns = useMemo(() => [
     {
       field: "transaction_no",
@@ -347,15 +429,15 @@ export default function WeighbridgeApiStream() {
         let label = "Pending 2nd Weight";
 
         if (val === "COMPLETED") {
-          bg = "#d1e7dd"; // Bootstrap classic success background
+          bg = "#d1e7dd";
           color = "#0f5132";
           label = "Completed";
         } else if (val === "SECOND_WEIGHT" || (params.row.second_weight_kg && val !== "COMPLETED")) {
-          bg = "#cff4fc"; // Bootstrap classic info background
+          bg = "#cff4fc";
           color = "#055160";
           label = "2nd Reading Done";
         } else if (val === "PENDING_SECOND_WEIGHT") {
-          bg = "#fff3cd"; // Bootstrap classic warning background
+          bg = "#fff3cd";
           color = "#664d03";
           label = "1st Reading Done";
         }
@@ -383,23 +465,37 @@ export default function WeighbridgeApiStream() {
     {
       field: "actions",
       headerName: "Action",
-      width: 90,
+      width: 150,
       sortable: false,
       filterable: false,
       align: "center",
       headerAlign: "center",
       renderCell: (params) => (
-        <button 
-          type="button" 
-          className="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold"
-          style={{ fontSize: "0.78rem" }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setSelectedTx(params.row);
-          }}
-        >
-          View
-        </button>
+        <div className="d-flex align-items-center gap-1">
+          <button 
+            type="button" 
+            className="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold"
+            style={{ fontSize: "0.78rem" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedTx(params.row);
+            }}
+          >
+            View
+          </button>
+          <button 
+            type="button" 
+            className="btn btn-primary btn-sm py-0 px-2 fw-semibold"
+            style={{ fontSize: "0.78rem" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleInitiateRequestFromTx(params.row);
+            }}
+            title="Initiate Quality & Costing Request"
+          >
+            QC
+          </button>
+        </div>
       )
     }
   ], []);
@@ -424,22 +520,30 @@ export default function WeighbridgeApiStream() {
             <Link to="/dashboard" className="text-decoration-none text-primary">Dashboard</Link>
           </li>
           <li className="breadcrumb-item active text-secondary" aria-current="page">
-            Weighbridge Transactions
+            Weighbridge Operations
           </li>
         </ol>
 
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-2 border-bottom">
           <div>
-            <h4 className="fw-bold mb-0 text-dark">Weighbridge Transactions</h4>
+            <h4 className="fw-bold mb-0 text-dark">Weighbridge & Quality Operations Hub</h4>
             <p className="text-secondary small mb-0">
-              Live scale transaction records, plant allocations, and completion status
+              Live scale transactions, HES-1 dedicated intake, and Riley & Toyo Acceptance Note workflows
             </p>
           </div>
 
           <div className="d-flex align-items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1.5"
+              onClick={() => setLogsModalOpen(true)}
+            >
+              <i className="bi bi-sliders"></i>
+              <span>Cut % & Rates</span>
+            </button>
             <button 
               type="button" 
-              className="btn btn-primary btn-sm px-3"
+              className="btn btn-outline-primary btn-sm px-3"
               onClick={handleExportCSV}
             >
               Export CSV
@@ -448,147 +552,283 @@ export default function WeighbridgeApiStream() {
         </div>
       </nav>
 
-      {/* Filter & Search Bar with Plant Filter */}
-      <div className="card border shadow-sm rounded-3 mb-3 bg-white">
-        <div className="card-body p-3">
-          <div className="row g-2 align-items-center">
-            {/* Search Input */}
-            <div className="col-12 col-lg-3">
-              <input 
-                type="text" 
-                className="form-control form-control-sm bg-light" 
-                placeholder="Search Ticket, Plant, Vehicle, Supplier..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-
-            {/* Plant Filter */}
-            <div className="col-6 col-md-3 col-lg-2">
-              <select 
-                className="form-select form-select-sm" 
-                value={plantFilter}
-                onChange={(e) => setPlantFilter(e.target.value)}
-              >
-                <option value="ALL">All Plants</option>
-                {plantOptions.map(code => (
-                  <option key={code} value={code}>Plant {code}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div className="col-6 col-md-3 col-lg-2">
-              <select 
-                className="form-select form-select-sm" 
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="PENDING_SECOND_WEIGHT">1st Reading Done</option>
-                <option value="SECOND_WEIGHT">2nd Reading Done</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
-            </div>
-
-            {/* Direction Filter */}
-            <div className="col-6 col-md-3 col-lg-2">
-              <select 
-                className="form-select form-select-sm" 
-                value={directionFilter}
-                onChange={(e) => setDirectionFilter(e.target.value)}
-              >
-                <option value="ALL">All Directions</option>
-                <option value="IN">Inbound (IN)</option>
-                <option value="OUT">Outbound (OUT)</option>
-              </select>
-            </div>
-
-            {/* Sort Filter */}
-            <div className="col-6 col-md-3 col-lg-2">
-              <select 
-                className="form-select form-select-sm" 
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="weight_desc">Highest Net Weight</option>
-                <option value="weight_asc">Lowest Net Weight</option>
-              </select>
-            </div>
-
-            {/* Clear Filters / Count */}
-            <div className="col-12 col-lg-1 text-lg-end d-flex align-items-center justify-content-lg-end gap-2">
-              {hasActiveFilters && (
-                <button 
-                  type="button" 
-                  className="btn btn-outline-secondary btn-sm py-1 px-2"
-                  onClick={clearFilters}
-                  title="Clear all filters"
-                >
-                  Clear
-                </button>
-              )}
-              <span className="text-secondary small fw-medium text-nowrap">
-                {filteredData.length} records
+      {/* Navigation Tabs Bar */}
+      <div className="card border shadow-sm rounded-3 bg-white p-2 mb-3">
+        <ul className="nav nav-pills gap-1 flex-wrap">
+          {/* Tab 1: HES-1 Transactions (Default view per user prompt) */}
+          <li className="nav-item">
+            <button
+              type="button"
+              className={`nav-link py-2 px-3 fw-bold d-flex align-items-center gap-2 ${
+                activeTab === "hes1" ? "active bg-primary text-white shadow-sm" : "text-dark hover-bg-light"
+              }`}
+              onClick={() => handleTabChange("hes1")}
+            >
+              <i className="bi bi-funnel"></i>
+              <span>HES-1 Transactions</span>
+              <span className={`badge ms-1 ${activeTab === "hes1" ? "bg-white text-primary" : "bg-primary text-white"}`}>
+                {hes1Transactions.length}
               </span>
+            </button>
+          </li>
+
+          {/* Tab 2: Initiate Quality & Costing */}
+          <li className="nav-item">
+            <button
+              type="button"
+              className={`nav-link py-2 px-3 fw-bold d-flex align-items-center gap-2 ${
+                activeTab === "initiate" ? "active bg-primary text-white shadow-sm" : "text-dark hover-bg-light"
+              }`}
+              onClick={() => handleTabChange("initiate")}
+            >
+              <i className="bi bi-file-earmark-plus"></i>
+              <span>Initiate Request (Toyo / Rileys)</span>
+            </button>
+          </li>
+
+          {/* Tab 3: Daily Requests & 5-Step Approval Lifecycle */}
+          <li className="nav-item">
+            <button
+              type="button"
+              className={`nav-link py-2 px-3 fw-bold d-flex align-items-center gap-2 ${
+                activeTab === "daily-requests" ? "active bg-primary text-white shadow-sm" : "text-dark hover-bg-light"
+              }`}
+              onClick={() => handleTabChange("daily-requests")}
+            >
+              <i className="bi bi-calendar-check"></i>
+              <span>Daily Requests & Approvals</span>
+              <span className={`badge ms-1 ${activeTab === "daily-requests" ? "bg-white text-primary" : "bg-success text-white"}`}>
+                {qcRequests.length}
+              </span>
+            </button>
+          </li>
+
+          {/* Tab 4: All Scale Transactions (General DataGrid) */}
+          <li className="nav-item">
+            <button
+              type="button"
+              className={`nav-link py-2 px-3 fw-bold d-flex align-items-center gap-2 ${
+                activeTab === "all" ? "active bg-primary text-white shadow-sm" : "text-secondary hover-bg-light"
+              }`}
+              onClick={() => handleTabChange("all")}
+            >
+              <i className="bi bi-grid-3x3"></i>
+              <span>All Scale Records</span>
+              <span className="badge bg-secondary-subtle text-secondary ms-1">
+                {transactions.length}
+              </span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      {/* --- TAB CONTENT SWITCHER --- */}
+
+      {/* 1. HES-1 Transactions Tab */}
+      {activeTab === "hes1" && (
+        <Hes1TransactionsTab
+          transactions={transactions}
+          loading={loading}
+          onInitiateRequest={(tx) => handleInitiateRequestFromTx(tx, "RILEYS")}
+          onOpenConfigs={() => setLogsModalOpen(true)}
+        />
+      )}
+
+      {/* 2. Initiate Quality & Costing Tab */}
+      {activeTab === "initiate" && (
+        <InitiateQualityCostingTab
+          transactions={transactions}
+          loading={loading}
+          onInitiateWithTx={(tx, company) => handleInitiateRequestFromTx(tx, company)}
+          onOpenConfigs={() => setLogsModalOpen(true)}
+          onViewDailyRequests={() => handleTabChange("daily-requests")}
+        />
+      )}
+
+      {/* 3. Daily Requests & Approvals Tab */}
+      {activeTab === "daily-requests" && (
+        <DailyRequestsTab
+          requests={qcRequests}
+          loading={qcLoading}
+          onOpenCreateNew={handleOpenBlankInitiate}
+          onViewDocument={(req) => setPrintableModal({ show: true, request: req })}
+          onOpenConfigs={() => setLogsModalOpen(true)}
+        />
+      )}
+
+      {/* 4. All Scale Records DataGrid Tab */}
+      {activeTab === "all" && (
+        <div className="d-flex flex-column gap-3">
+          {/* Filter Bar */}
+          <div className="card border shadow-sm rounded-3 bg-white">
+            <div className="card-body p-3">
+              <div className="row g-2 align-items-center">
+                <div className="col-12 col-lg-3">
+                  <input 
+                    type="text" 
+                    className="form-control form-control-sm bg-light" 
+                    placeholder="Search Ticket, Plant, Vehicle, Supplier..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <div className="col-6 col-md-3 col-lg-2">
+                  <select 
+                    className="form-select form-select-sm" 
+                    value={plantFilter}
+                    onChange={(e) => setPlantFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Plants</option>
+                    {plantOptions.map(code => (
+                      <option key={code} value={code}>Plant {code}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-6 col-md-3 col-lg-2">
+                  <select 
+                    className="form-select form-select-sm" 
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="PENDING_SECOND_WEIGHT">1st Reading Done</option>
+                    <option value="SECOND_WEIGHT">2nd Reading Done</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+
+                <div className="col-6 col-md-3 col-lg-2">
+                  <select 
+                    className="form-select form-select-sm" 
+                    value={directionFilter}
+                    onChange={(e) => setDirectionFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Directions</option>
+                    <option value="IN">Inbound (IN)</option>
+                    <option value="OUT">Outbound (OUT)</option>
+                  </select>
+                </div>
+
+                <div className="col-6 col-md-3 col-lg-2">
+                  <select 
+                    className="form-select form-select-sm" 
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="weight_desc">Highest Net Weight</option>
+                    <option value="weight_asc">Lowest Net Weight</option>
+                  </select>
+                </div>
+
+                <div className="col-12 col-lg-1 text-lg-end d-flex align-items-center justify-content-lg-end gap-2">
+                  {hasActiveFilters && (
+                    <button 
+                      type="button" 
+                      className="btn btn-outline-secondary btn-sm py-1 px-2"
+                      onClick={clearFilters}
+                      title="Clear all filters"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="text-secondary small fw-medium text-nowrap">
+                    {filteredData.length} records
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* React Data Grid Component - MUI X with Status Background Cell */}
-      <div 
-        className="card border shadow-sm rounded-3 bg-white p-2"
-        style={{ height: 620, width: "100%" }}
-      >
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          initialState={{
-            pagination: {
-              paginationModel: { page: 0, pageSize: 10 }
-            }
-          }}
-          pageSizeOptions={[10, 25, 50, 100]}
-          disableRowSelectionOnClick
-          onRowClick={(params) => setSelectedTx(params.row)}
-          sx={{
-            border: "none",
-            fontFamily: "inherit",
-            fontSize: "0.875rem",
-            "& .MuiDataGrid-columnHeaders": {
-              backgroundColor: "#f8f9fa",
-              borderBottom: "1px solid #dee2e6",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              textTransform: "uppercase",
-              color: "#495057"
-            },
-            "& .MuiDataGrid-cell": {
-              borderBottom: "1px solid #f1f3f5",
-              fontSize: "0.875rem",
-              display: "flex",
-              alignItems: "center"
-            },
-            "& .MuiDataGrid-cell[data-field='status']": {
-              padding: 0
-            },
-            "& .MuiDataGrid-row:hover": {
-              backgroundColor: "#f8f9fa",
-              cursor: "pointer"
-            },
-            "& .MuiTablePagination-root": {
-              color: "#6c757d",
-              fontSize: "0.875rem"
-            }
+          {/* MUI X DataGrid */}
+          <div 
+            className="card border shadow-sm rounded-3 bg-white p-2"
+            style={{ height: 600, width: "100%" }}
+          >
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              loading={loading}
+              initialState={{
+                pagination: {
+                  paginationModel: { page: 0, pageSize: 10 }
+                }
+              }}
+              pageSizeOptions={[10, 25, 50, 100]}
+              disableRowSelectionOnClick
+              onRowClick={(params) => setSelectedTx(params.row)}
+              sx={{
+                border: "none",
+                fontFamily: "inherit",
+                fontSize: "0.875rem",
+                "& .MuiDataGrid-columnHeaders": {
+                  backgroundColor: "#f8f9fa",
+                  borderBottom: "1px solid #dee2e6",
+                  fontWeight: 600,
+                  fontSize: "0.85rem",
+                  textTransform: "uppercase",
+                  color: "#495057"
+                },
+                "& .MuiDataGrid-cell": {
+                  borderBottom: "1px solid #f1f3f5",
+                  fontSize: "0.875rem",
+                  display: "flex",
+                  alignItems: "center"
+                },
+                "& .MuiDataGrid-cell[data-field='status']": {
+                  padding: 0
+                },
+                "& .MuiDataGrid-row:hover": {
+                  backgroundColor: "#f8f9fa",
+                  cursor: "pointer"
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALS --- */}
+
+      {/* 1. Riley & Toyo Template Request Form Modal */}
+      {templateModal.show && (
+        <RileyToyoTemplateModal
+          show={templateModal.show}
+          onHide={() => setTemplateModal({ ...templateModal, show: false })}
+          hes1Transactions={hes1Transactions}
+          preselectedTx={templateModal.preselectedTx}
+          initialCompany={templateModal.company}
+          onRequestCreated={(created) => {
+            showToast(`Successfully created Quality & Costing request ${created.requestNo} for ${created.company}!`, "success");
+            handleTabChange("daily-requests");
           }}
         />
-      </div>
+      )}
 
-      {/* Viewing Ticket Details Modal - Clean Text, No Chips, Status Update Action */}
+      {/* 2. Printable Acceptance Note Modal */}
+      {printableModal.show && (
+        <PrintableAcceptanceNoteModal
+          show={printableModal.show}
+          onHide={() => setPrintableModal({ ...printableModal, show: false, request: null })}
+          request={printableModal.request}
+        />
+      )}
+
+      {/* 3. Cut Percentage & Rate Logs Modal */}
+      {logsModalOpen && (
+        <CutPercentageAndRateLogsModal
+          show={logsModalOpen}
+          onHide={() => setLogsModalOpen(false)}
+          onConfigChanged={() => {
+            showToast("Cut percentages configuration updated successfully!", "success");
+          }}
+        />
+      )}
+
+      {/* 4. Ticket Detail View Modal (All Records Tab) */}
       {selectedTx && (
         <div 
           className="modal show d-block" 
@@ -597,7 +837,6 @@ export default function WeighbridgeApiStream() {
         >
           <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content border shadow rounded-3">
-              {/* Modal Header */}
               <div className="modal-header border-bottom py-3 px-4 bg-light d-flex align-items-center justify-content-between">
                 <div>
                   <h5 className="modal-title fw-bold mb-0 text-dark">
@@ -610,9 +849,7 @@ export default function WeighbridgeApiStream() {
                 <button type="button" className="btn-close" onClick={() => setSelectedTx(null)}></button>
               </div>
 
-              {/* Modal Body */}
               <div className="modal-body p-4">
-                {/* Status & Lifecycle Strip */}
                 <div 
                   className="d-flex flex-wrap justify-content-between align-items-center p-3 rounded-2 mb-4 border"
                   style={{
@@ -638,12 +875,10 @@ export default function WeighbridgeApiStream() {
                   </div>
                 </div>
 
-                {/* Weight Breakdown Cards */}
                 <h6 className="fw-bold mb-2 text-dark">Weight Measurements</h6>
                 <div className="card border mb-4">
                   <div className="card-body p-3">
                     <div className="row g-3 text-center">
-                      {/* 1st Weight */}
                       <div className="col-4 border-end">
                         <div className="text-secondary small mb-1">1st Weight</div>
                         <h4 className="fw-bold mb-0 text-dark font-monospace">
@@ -655,7 +890,6 @@ export default function WeighbridgeApiStream() {
                         </div>
                       </div>
 
-                      {/* 2nd Weight */}
                       <div className="col-4 border-end">
                         <div className="text-secondary small mb-1">2nd Weight</div>
                         <h4 className="fw-bold mb-0 text-dark font-monospace">
@@ -669,7 +903,6 @@ export default function WeighbridgeApiStream() {
                         </div>
                       </div>
 
-                      {/* Net Weight */}
                       <div className="col-4">
                         <div className="text-secondary small mb-1">Net Weight</div>
                         <h4 className="fw-bold mb-0 text-primary font-monospace">
@@ -678,17 +911,11 @@ export default function WeighbridgeApiStream() {
                             : (selectedTx.net_weight_kg != null ? Number(selectedTx.net_weight_kg).toLocaleString() : "—")}{" "}
                           <small className="fs-7 fw-normal text-secondary">KG</small>
                         </h4>
-                        {selectedTx.net_weight_kg && selectedTx.final_net_weight_kg && selectedTx.net_weight_kg !== selectedTx.final_net_weight_kg && (
-                          <div className="text-secondary small mt-1">
-                            Gross Net: {Number(selectedTx.net_weight_kg).toLocaleString()} KG
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Logistics & Particulars Table (Clean Plain Text - No Chips) */}
                 <h6 className="fw-bold mb-2 text-dark">Transaction Particulars</h6>
                 <div className="table-responsive">
                   <table className="table table-bordered table-sm mb-0">
@@ -699,9 +926,7 @@ export default function WeighbridgeApiStream() {
                       </tr>
                       <tr>
                         <th className="bg-light text-secondary fw-semibold">Plant Code</th>
-                        <td className="fw-semibold text-dark">
-                          {selectedTx.plant_code || "HES-1"}
-                        </td>
+                        <td className="fw-semibold text-dark">{selectedTx.plant_code || "HES-1"}</td>
                       </tr>
                       <tr>
                         <th className="bg-light text-secondary fw-semibold">Vehicle Number</th>
@@ -732,9 +957,21 @@ export default function WeighbridgeApiStream() {
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="modal-footer border-top py-2 px-4 d-flex justify-content-end gap-2 bg-light">
+              <div className="modal-footer border-top py-2 px-4 d-flex justify-content-between bg-light">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm fw-semibold"
+                  onClick={() => {
+                    const tx = selectedTx;
+                    setSelectedTx(null);
+                    handleInitiateRequestFromTx(tx);
+                  }}
+                >
+                  <i className="bi bi-file-earmark-plus me-1"></i>
+                  Initiate QC Request with this Ticket
+                </button>
 
+                <div className="d-flex gap-2">
                   <button
                     type="button"
                     className="btn btn-outline-primary btn-sm"
@@ -756,7 +993,8 @@ export default function WeighbridgeApiStream() {
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   );
 }

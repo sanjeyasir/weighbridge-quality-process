@@ -3,18 +3,27 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "../components/common/ProtectedRoute";
 import DashboardLayout from "../components/layout/DashboardLayout";
 
-// Import Pages
+// Import Auth Pages
 import Login from "../pages/auth/Login";
 import ForgotPassword from "../pages/auth/ForgotPassword";
 import ChangePassword from "../pages/auth/ChangePassword";
 import PasswordSuccess from "../pages/auth/PasswordSuccess";
+
+// Import Main Views
 import Dashboard from "../pages/dashboard/Dashboard";
-import WeighbridgeRequests from "../pages/weighbridge/WeighbridgeRequests";
-import WeighbridgeApiStream from "../pages/weighbridge/WeighbridgeApiStream";
-import CreateRequest from "../pages/weighbridge/CreateRequest";
-import RequestDetails from "../pages/weighbridge/RequestDetails";
-import Users from "../pages/admin/Users";
+import WeighbridgeTransactionsView from "../pages/weighbridge/WeighbridgeTransactionsView";
+import CreateProcessRequestView from "../pages/weighbridge/CreateProcessRequestView";
+import CreatedRequestsView from "../pages/weighbridge/CreatedRequestsView";
+import QualityParametersView from "../pages/weighbridge/QualityParametersView";
+import FinanceCostingView from "../pages/weighbridge/FinanceCostingView";
+import FinanceApprovalView from "../pages/weighbridge/FinanceApprovalView";
+import CompletedRequestsView from "../pages/weighbridge/CompletedRequestsView";
+import RejectedRequestsView from "../pages/weighbridge/RejectedRequestsView";
+
+// Import Admin & Config Pages
+import ViewConfiguration from "../pages/admin/ViewConfiguration";
 import PlantMaster from "../pages/admin/PlantMaster";
+import Users from "../pages/admin/Users";
 import ApiDocs from "../pages/admin/ApiDocs";
 
 import { useAuth } from "../contexts/AuthContext";
@@ -65,7 +74,7 @@ export default function AppRoutes() {
         }
       />
 
-      {/* Protected Routes in Dashboard Layout */}
+      {/* Dashboard Overview */}
       <Route
         path="/dashboard"
         element={
@@ -76,59 +85,113 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      
+
+      {/* View 1: All Weighbridge Scale Transactions (Plant Wise) */}
       <Route
-        path="/requests"
+        path="/weighbridge-transactions"
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <WeighbridgeRequests />
+              <WeighbridgeTransactionsView />
             </DashboardLayout>
           </ProtectedRoute>
         }
       />
+      <Route path="/api-stream" element={<Navigate to="/weighbridge-transactions" replace />} />
 
-      {/* Separate View: REST API Transactions Live Stream in Bootstrap */}
+      {/* View 2: Create New Process Request (Plant Wise Filter) */}
       <Route
-        path="/api-stream"
+        path="/requests/new"
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <WeighbridgeApiStream />
+              <CreateProcessRequestView />
             </DashboardLayout>
           </ProtectedRoute>
         }
       />
+      <Route path="/requests/create" element={<Navigate to="/requests/new" replace />} />
 
+      {/* View 3: Created Requests by Requester (Plant Wise Filter) */}
       <Route
-        path="/requests/create"
-        element={
-          <ProtectedRoute allowedRoles={["requester", "admin"]}>
-            <DashboardLayout>
-              <CreateRequest />
-            </DashboardLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/requests/:id"
+        path="/requests/created"
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <RequestDetails />
+              <CreatedRequestsView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/requests" element={<Navigate to="/requests/created" replace />} />
+
+      {/* View 4: Quality & Costing Parameters Update (Plant Wise Filter) */}
+      <Route
+        path="/requests/quality"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <QualityParametersView />
             </DashboardLayout>
           </ProtectedRoute>
         }
       />
 
-      {/* Admin User Management */}
+      {/* View 5: Finance Officer Costing (Plant Wise Filter) */}
       <Route
-        path="/admin/users"
+        path="/requests/finance-costing"
         element={
-          <ProtectedRoute allowedRoles={["admin"]}>
+          <ProtectedRoute>
             <DashboardLayout>
-              <Users />
+              <FinanceCostingView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* View 6: Finance Manager Approval (Plant Wise Filter) */}
+      <Route
+        path="/requests/finance-approval"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <FinanceApprovalView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* View 7: Completed Requests (Plant Wise Filter) */}
+      <Route
+        path="/requests/completed"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <CompletedRequestsView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* View 8: Rejected Requests (Plant Wise Filter) */}
+      <Route
+        path="/requests/rejected"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <RejectedRequestsView />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* View 9: User View Configuration */}
+      <Route
+        path="/view-config"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ViewConfiguration />
             </DashboardLayout>
           </ProtectedRoute>
         }
@@ -141,6 +204,18 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <PlantMaster />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* User Accounts & Role Management (Accessible to all user roles to edit role selection) */}
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <Users />
             </DashboardLayout>
           </ProtectedRoute>
         }

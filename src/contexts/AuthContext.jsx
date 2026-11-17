@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect } from "react";
 import * as authService from "../services/firebase/authService";
 import { isMockMode } from "../services/firebase/config";
 import { useAuthStore } from "../store/authStore";
+import { ROLE_CONFIG_MAP, ROLE_PROFILES } from "../services/firebase/userService";
 
 const AuthContext = createContext(null);
 
@@ -47,11 +48,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const isSuperAdmin = (profile?.email || user?.email || "").toLowerCase() === "admin@gmail.com";
+  const userRole = isSuperAdmin ? "admin" : (profile?.role || "requester").toLowerCase();
+  const userRoleConfig = isSuperAdmin ? "ALL" : (profile?.roleConfig || ROLE_CONFIG_MAP[userRole] || "REQUESTER").toUpperCase();
+  const defaultViews = ROLE_PROFILES[userRole] || ROLE_PROFILES[userRoleConfig] || ROLE_PROFILES.ALL;
+
   const currentUser = profile ? {
     uid: user?.uid || profile.uid || profile.id,
     email: user?.email || profile.email || "",
     displayName: profile.displayName || "User",
-    role: profile.role,
+    role: userRole,
+    roleConfig: userRoleConfig,
+    enabledViews: isSuperAdmin ? (profile.enabledViews || ROLE_PROFILES.admin) : (profile.enabledViews || defaultViews),
+    plantId: (profile.plantId || profile.plant || "HES-1").toUpperCase(),
+    plantName: profile.plantName || "",
     status: profile.status,
     requirePasswordChange: profile.requirePasswordChange || false
   } : null;

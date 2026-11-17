@@ -14,7 +14,8 @@ import {
   collection, 
   query, 
   where, 
-  Timestamp 
+  Timestamp,
+  onSnapshot
 } from "firebase/firestore";
 import { auth, db, isMockMode } from "./config";
 
@@ -104,12 +105,19 @@ export async function login(email, password) {
     
     if (userDoc.exists()) {
       profile = { id: userDoc.id, ...userDoc.data() };
+      // admin@gmail.com must always have admin role and cannot be changed
+      if (emailLower === "admin@gmail.com" && profile.role !== "admin") {
+        profile.role = "admin";
+        profile.roleConfig = "ALL";
+        updateDoc(userDocRef, { role: "admin", roleConfig: "ALL" }).catch(console.error);
+      }
     } else if (emailLower === "admin@gmail.com") {
       // Auto seed admin profile document in firestore if missing
       profile = {
         email: "admin@gmail.com",
         displayName: "Super Admin",
         role: "admin",
+        roleConfig: "ALL",
         status: "active",
         requirePasswordChange: false,
         createdAt: Timestamp.now()
@@ -199,38 +207,62 @@ export function subscribeAuthState(onStateChanged) {
     window.addEventListener("storage", listener);
     return () => window.removeEventListener("storage", listener);
   } else {
-    return onAuthStateChanged(auth, async (user) => {
+    let unsubDoc = null;
+
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (unsubDoc) {
+        unsubDoc();
+        unsubDoc = null;
+      }
+
       if (user) {
         try {
           const userDocRef = doc(db, "users", user.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            const profile = { id: userDoc.id, ...userDoc.data() };
-            if (profile.status === "active") {
-              onStateChanged(user, profile);
+          unsubDoc = onSnapshot(userDocRef, async (userDoc) => {
+            if (userDoc.exists()) {
+              const profile = { id: userDoc.id, ...userDoc.data() };
+              // admin@gmail.com must always have admin role and cannot be changed
+              if (user.email && user.email.toLowerCase() === "admin@gmail.com" && profile.role !== "admin") {
+                profile.role = "admin";
+                profile.roleConfig = "ALL";
+                updateDoc(userDocRef, { role: "admin", roleConfig: "ALL" }).catch(console.error);
+              }
+              if (profile.status === "active") {
+                onStateChanged(user, profile);
+                return;
+              }
+            } else if (user.email && user.email.toLowerCase() === "admin@gmail.com") {
+              // Seed if not exists
+              const profile = {
+                email: "admin@gmail.com",
+                displayName: "Super Admin",
+                role: "admin",
+                roleConfig: "ALL",
+                status: "active",
+                requirePasswordChange: false,
+                createdAt: Timestamp.now()
+              };
+              await setDoc(userDocRef, profile, { merge: true });
+              onStateChanged(user, { id: user.uid, ...profile });
               return;
             }
-          } else if (user.email && user.email.toLowerCase() === "admin@gmail.com") {
-            // Seed if not exists
-            const profile = {
-              email: "admin@gmail.com",
-              displayName: "Super Admin",
-              role: "admin",
-              status: "active",
-              requirePasswordChange: false,
-              createdAt: Timestamp.now()
-            };
-            await setDoc(userDocRef, profile);
-            onStateChanged(user, { id: user.uid, ...profile });
-            return;
-          }
+            onStateChanged(null, null);
+          }, (err) => {
+            console.error("Live user profile listener error:", err);
+            onStateChanged(null, null);
+          });
+          return;
         } catch (err) {
-          console.error("Error fetching user profile:", err);
+          console.error("Error setting up live user listener:", err);
         }
       }
       onStateChanged(null, null);
     });
+
+    return () => {
+      if (unsubDoc) unsubDoc();
+      unsubAuth();
+    };
   }
 }
 

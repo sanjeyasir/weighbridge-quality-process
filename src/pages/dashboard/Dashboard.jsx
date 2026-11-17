@@ -1,329 +1,396 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { subscribeToApiTransactions } from "../../services/firebase/weighbridgeApiService";
-import { Card, Row, Col, Table } from "react-bootstrap";
+import { subscribeToWeighbridgeRequests } from "../../services/firebase/weighbridgeService";
+import PlantSelector from "../../components/common/PlantSelector";
+import { useAuth } from "../../contexts/AuthContext";
+import { Card, Row, Col, Table, Badge, Button } from "react-bootstrap";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth() || {};
+  const isAdminMultiPlant = currentUser?.email?.toLowerCase() === "admin@gmail.com";
+  const userPlant = (currentUser?.plantId || "HES-1").toUpperCase();
+
   const [transactions, setTransactions] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPlant, setSelectedPlant] = useState(isAdminMultiPlant ? "ALL" : userPlant);
 
   useEffect(() => {
-    const unsubscribe = subscribeToApiTransactions(
+    setLoading(true);
+    let loadedTx = false;
+    let loadedReq = false;
+
+    const checkDone = () => {
+      if (loadedTx && loadedReq) setLoading(false);
+    };
+
+    const unsubTx = subscribeToApiTransactions(
       (data) => {
         setTransactions(data);
-        setLoading(false);
+        loadedTx = true;
+        checkDone();
       },
       (err) => {
-        console.error("Dashboard weighbridge subscription error:", err);
-        setLoading(false);
+        console.error("Dashboard scale transactions error:", err);
+        loadedTx = true;
+        checkDone();
+      }
+    );
+
+    const unsubReq = subscribeToWeighbridgeRequests(
+      (data) => {
+        setRequests(data);
+        loadedReq = true;
+        checkDone();
+      },
+      (err) => {
+        console.error("Dashboard requests error:", err);
+        loadedReq = true;
+        checkDone();
       }
     );
 
     return () => {
-      if (typeof unsubscribe === "function") unsubscribe();
+      if (typeof unsubTx === "function") unsubTx();
+      if (typeof unsubReq === "function") unsubReq();
     };
   }, []);
 
-  // Summary Metrics from Weighbridge Transactions
-  const metrics = useMemo(() => {
-    const total = transactions.length;
-    const pendingSecond = transactions.filter(t => t.status === "PENDING_SECOND_WEIGHT").length;
-    const completed = transactions.filter(t => t.status === "COMPLETED").length;
-    const inbound = transactions.filter(t => t.direction === "IN").length;
-    const outbound = transactions.filter(t => t.direction === "OUT").length;
-
-    const totalKg = transactions.reduce((acc, t) => acc + (Number(t.final_net_weight_kg || t.net_weight_kg) || 0), 0);
-    const totalTonnage = (totalKg / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-    // Material summary
-    const materialCounts = {};
-    transactions.forEach(t => {
-      if (t.material_name) {
-        materialCounts[t.material_name] = (materialCounts[t.material_name] || 0) + 1;
-      }
-    });
-
-    const topMaterials = Object.entries(materialCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4);
-
-    return { total, pendingSecond, completed, inbound, outbound, totalKg, totalTonnage, topMaterials };
-  }, [transactions]);
-
-  // Helper date formatter
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "—";
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
-      return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    } catch {
-      return dateStr;
+  // Filter by plant: Non-admin strictly sees only their plant's details
+  const filteredTx = useMemo(() => {
+    if (!isAdminMultiPlant) {
+      return transactions.filter(t => (t.plant_code || "HES-1").toUpperCase() === userPlant);
     }
-  };
+    if (selectedPlant === "ALL") return transactions;
+    return transactions.filter(t => (t.plant_code || "HES-1").toUpperCase() === selectedPlant);
+  }, [transactions, selectedPlant, isAdminMultiPlant, userPlant]);
+
+  const filteredRequests = useMemo(() => {
+    if (!isAdminMultiPlant) {
+      return requests.filter(r => (r.plantCode || "HES-1").toUpperCase() === userPlant);
+    }
+    if (selectedPlant === "ALL") return requests;
+    return requests.filter(r => (r.plantCode || "HES-1").toUpperCase() === selectedPlant);
+  }, [requests, selectedPlant, isAdminMultiPlant, userPlant]);
+
+  // Updated Operational Figures & Metrics
+  const figures = useMemo(() => {
+    // Scale Transactions Figures
+    const totalScaleTx = filteredTx.length;
+    const scaleNetKg = filteredTx.reduce((acc, t) => acc + (Number(t.final_net_weight_kg || t.net_weight_kg) || 0), 0);
+    const scaleTonnage = (scaleNetKg / 1000).toFixed(1);
+    const completedScaleTx = filteredTx.filter(t => t.status === "COMPLETED").length;
+    const pendingScaleTx = filteredTx.filter(t => t.status !== "COMPLETED").length;
+
+    // Process Requests Figures
+    const totalRequests = filteredRequests.length;
+    const pendingQuality = filteredRequests.filter(r => r.status === "PENDING_QUALITY").length;
+    const pendingFinanceOfficer = filteredRequests.filter(r => r.status === "PENDING_FINANCE_OFFICER").length;
+    const pendingFinanceManager = filteredRequests.filter(r => r.status === "PENDING_FINANCE_MANAGER").length;
+    const completedRequests = filteredRequests.filter(r => r.status === "COMPLETED").length;
+    const rejectedRequests = filteredRequests.filter(r => r.status === "REJECTED").length;
+
+    // Total Financials & WP Tonnage
+    const totalWpKg = filteredRequests.reduce((acc, r) => {
+      const wp = Number(r.costing?.weightForPayment ?? r.quality?.weightForPayment ?? r.wbtWeight ?? 0);
+      return acc + wp;
+    }, 0);
+    const totalWpTonnage = (totalWpKg / 1000).toFixed(1);
+
+    const totalPayableAmount = filteredRequests.reduce((acc, r) => {
+      const paid = Number(r.payment?.paidAmount || r.costing?.totalPayment || 0);
+      return acc + paid;
+    }, 0);
+
+    return {
+      totalScaleTx,
+      scaleNetKg,
+      scaleTonnage,
+      completedScaleTx,
+      pendingScaleTx,
+      totalRequests,
+      pendingQuality,
+      pendingFinanceOfficer,
+      pendingFinanceManager,
+      completedRequests,
+      rejectedRequests,
+      totalWpKg,
+      totalWpTonnage,
+      totalPayableAmount
+    };
+  }, [filteredTx, filteredRequests]);
+
+  const activePlantLabel = isAdminMultiPlant 
+    ? (selectedPlant === "ALL" ? "All Plants (Global)" : `Plant ${selectedPlant}`)
+    : `Plant ${userPlant}`;
 
   return (
     <div className="d-flex flex-column gap-3">
-      {/* Top Header & Navigation Action */}
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-2 border-bottom">
-        <div>
-          <h4 className="fw-bold mb-0 text-dark">Dashboard Overview</h4>
-          <p className="text-secondary small mb-0">
-            Operational summary and net tonnage metrics from weighbridge transactions
-          </p>
-        </div>
+      {/* Header & Single Select Plant Dropdown */}
+      <div className="card border shadow-sm rounded-3 bg-white p-3">
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h4 className="fw-bold mb-0 text-dark">Weighbridge & Quality Dashboard Overview</h4>
+            <p className="text-secondary small mb-0 mt-1">
+              Live operational metrics, scale tonnage, and multi-stage process requests for {activePlantLabel}
+            </p>
+          </div>
 
-        <button
-          type="button"
-          className="btn btn-primary btn-sm px-3 fw-semibold d-flex align-items-center gap-2"
-          onClick={() => navigate("/api-stream")}
-        >
-          <i className="bi bi-journal-text"></i>
-          <span>View All Transactions</span>
-        </button>
+          <div className="d-flex align-items-center gap-2">
+            <PlantSelector
+              selectedPlant={selectedPlant}
+              onSelectPlant={setSelectedPlant}
+              showAllOption={isAdminMultiPlant}
+              label={isAdminMultiPlant ? "Plant Scope" : "Assigned Plant"}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* KPI Summary Cards from Weighbridge Transactions */}
+      {/* Row 1: Primary KPI Figures */}
       <Row className="g-3">
-        {/* Total Transactions */}
+        {/* Scale Transactions */}
         <Col xs={12} sm={6} lg={3}>
           <Card className="border shadow-sm rounded-3 h-100 bg-white">
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-center mb-2">
-                <span className="text-secondary small fw-bold text-uppercase">Total Transactions</span>
+                <span className="text-secondary small fw-bold text-uppercase">Scale Records</span>
                 <div className="bg-primary bg-opacity-10 text-primary p-2 rounded-2">
                   <i className="bi bi-journal-text fs-5"></i>
                 </div>
               </div>
-              <h3 className="fw-bold mb-1 text-dark">
-                {loading ? "..." : metrics.total}
+              <h3 className="fw-bold mb-1 text-dark font-monospace">
+                {loading ? "..." : figures.totalScaleTx}
               </h3>
-              <div className="text-secondary small">
-                Scale transactions logged
+              <div className="text-muted small">
+                {figures.completedScaleTx} Completed • {figures.pendingScaleTx} Pending 2nd Wt
               </div>
+              <Link to="/weighbridge-transactions" className="btn btn-link btn-sm p-0 text-primary mt-2 text-decoration-none fw-semibold">
+                View Scale Records →
+              </Link>
             </Card.Body>
           </Card>
         </Col>
 
-        {/* Pending 2nd Weight */}
+        {/* Process Requests */}
         <Col xs={12} sm={6} lg={3}>
           <Card className="border shadow-sm rounded-3 h-100 bg-white">
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-center mb-2">
-                <span className="text-secondary small fw-bold text-uppercase">Pending 2nd Weight</span>
-                <div className="bg-warning bg-opacity-10 text-warning p-2 rounded-2">
-                  <i className="bi bi-hourglass-split fs-5"></i>
-                </div>
-              </div>
-              <h3 className="fw-bold mb-1 text-warning">
-                {loading ? "..." : metrics.pendingSecond}
-              </h3>
-              <div className="text-secondary small">
-                Waiting 2nd tare/gross scale
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-
-        {/* Completed */}
-        <Col xs={12} sm={6} lg={3}>
-          <Card className="border shadow-sm rounded-3 h-100 bg-white">
-            <Card.Body className="p-3">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <span className="text-secondary small fw-bold text-uppercase">Completed Weighings</span>
-                <div className="bg-success bg-opacity-10 text-success p-2 rounded-2">
-                  <i className="bi bi-check2-circle fs-5"></i>
-                </div>
-              </div>
-              <h3 className="fw-bold mb-1 text-success">
-                {loading ? "..." : metrics.completed}
-              </h3>
-              <div className="text-secondary small">
-                Dual weights verified
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-
-        {/* Total Net Weight */}
-        <Col xs={12} sm={6} lg={3}>
-          <Card className="border shadow-sm rounded-3 h-100 bg-white">
-            <Card.Body className="p-3">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <span className="text-secondary small fw-bold text-uppercase">Cumulative Net Cargo</span>
+                <span className="text-secondary small fw-bold text-uppercase">Process Requests</span>
                 <div className="bg-info bg-opacity-10 text-info p-2 rounded-2">
-                  <i className="bi bi-speedometer2 fs-5"></i>
+                  <i className="bi bi-inbox fs-5"></i>
                 </div>
               </div>
-              <h3 className="fw-bold mb-1 text-dark">
-                {loading ? "..." : `${metrics.totalTonnage}`} <span className="fs-6 fw-normal text-secondary">MT</span>
+              <h3 className="fw-bold mb-1 text-dark font-monospace">
+                {loading ? "..." : figures.totalRequests}
               </h3>
-              <div className="text-secondary small">
-                {metrics.totalKg.toLocaleString()} KG Verified
+              <div className="text-muted small">
+                {figures.completedRequests} Completed • {figures.rejectedRequests} Rejected
               </div>
+              <Link to="/requests/created" className="btn btn-link btn-sm p-0 text-info mt-2 text-decoration-none fw-semibold">
+                View Created Requests →
+              </Link>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Scale Net Tonnage */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Net Inward Tonnage</span>
+                <div className="bg-success bg-opacity-10 text-success p-2 rounded-2">
+                  <i className="bi bi-truck fs-5"></i>
+                </div>
+              </div>
+              <h3 className="fw-bold mb-1 text-success font-monospace">
+                {loading ? "..." : `${figures.scaleTonnage} MT`}
+              </h3>
+              <div className="text-muted small">
+                {figures.scaleNetKg.toLocaleString()} Total Kilograms
+              </div>
+              <div className="small text-secondary mt-2">
+                Weight for Payment: <strong>{figures.totalWpTonnage} MT</strong>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Total Financials */}
+        <Col xs={12} sm={6} lg={3}>
+          <Card className="border shadow-sm rounded-3 h-100 bg-white">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-secondary small fw-bold text-uppercase">Total Cost / Payable</span>
+                <div className="bg-warning bg-opacity-10 text-warning p-2 rounded-2">
+                  <i className="bi bi-cash-stack fs-5"></i>
+                </div>
+              </div>
+              <h3 className="fw-bold mb-1 text-dark font-monospace">
+                {loading ? "..." : `Rs ${Number(figures.totalPayableAmount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+              </h3>
+              <div className="text-muted small">
+                Approved Costing Disbursements
+              </div>
+              <Link to="/requests/completed" className="btn btn-link btn-sm p-0 text-success mt-2 text-decoration-none fw-semibold">
+                View Completed Reports →
+              </Link>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Operational Direction & Material Insights */}
-      <Row className="g-3">
-        {/* Direction Breakdown */}
-        <Col xs={12} md={6}>
-          <Card className="border shadow-sm rounded-3 bg-white h-100">
-            <Card.Body className="p-3">
-              <h6 className="fw-bold text-dark mb-3">Traffic Direction Breakdown</h6>
-              <div className="row g-2 text-center">
-                <div className="col-6">
-                  <div className="p-3 border rounded-2 bg-light">
-                    <span className="badge bg-primary px-2 py-1 mb-2">INBOUND (IN)</span>
-                    <h4 className="fw-bold mb-0 text-dark">{metrics.inbound}</h4>
-                    <div className="text-secondary small mt-1">Raw Materials Inward</div>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="p-3 border rounded-2 bg-light">
-                    <span className="badge bg-secondary px-2 py-1 mb-2">OUTBOUND (OUT)</span>
-                    <h4 className="fw-bold mb-0 text-dark">{metrics.outbound}</h4>
-                    <div className="text-secondary small mt-1">Dispatches & Outward</div>
-                  </div>
-                </div>
+      {/* Row 2: Workflow Stage Breakdown Figures */}
+      <Card className="border shadow-sm rounded-3 bg-white p-3">
+        <h6 className="fw-bold text-dark mb-3 text-uppercase" style={{ letterSpacing: "0.03em" }}>
+          Process Lifecycle Pipeline ({activePlantLabel})
+        </h6>
+
+        <Row className="g-3">
+          {/* 1. Pending Quality */}
+          <Col xs={6} md={3}>
+            <div 
+              className="p-3 rounded-3 border bg-warning bg-opacity-10 h-100 cursor-pointer"
+              style={{ cursor: "pointer" }}
+              onClick={() => navigate("/requests/quality")}
+            >
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="small fw-bold text-dark">1. Pending Quality</span>
+                <i className="bi bi-clipboard-check text-warning fs-5"></i>
               </div>
-            </Card.Body>
-          </Card>
-        </Col>
+              <h3 className="fw-bold mb-1 text-dark font-monospace">{figures.pendingQuality}</h3>
+              <span className="text-secondary small">Awaiting sample testing & moisture cuts</span>
+            </div>
+          </Col>
 
-        {/* Top Commodities Weighed */}
-        <Col xs={12} md={6}>
-          <Card className="border shadow-sm rounded-3 bg-white h-100">
-            <Card.Body className="p-3">
-              <h6 className="fw-bold text-dark mb-3">Commodity Volume Summary</h6>
-              {metrics.topMaterials.length === 0 ? (
-                <div className="text-secondary small py-3 text-center">No commodity data logged.</div>
-              ) : (
-                <div className="d-flex flex-column gap-2">
-                  {metrics.topMaterials.map(([mat, count]) => (
-                    <div key={mat} className="d-flex justify-content-between align-items-center p-2 rounded border bg-light">
-                      <span className="fw-semibold text-dark small">{mat}</span>
-                      <span className="badge bg-secondary">{count} {count === 1 ? "ticket" : "tickets"}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+          {/* 2. Pending Finance Costing */}
+          <Col xs={6} md={3}>
+            <div 
+              className="p-3 rounded-3 border bg-info bg-opacity-10 h-100 cursor-pointer"
+              style={{ cursor: "pointer" }}
+              onClick={() => navigate("/requests/finance-costing")}
+            >
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="small fw-bold text-dark">2. Pending Costing</span>
+                <i className="bi bi-calculator text-info fs-5"></i>
+              </div>
+              <h3 className="fw-bold mb-1 text-dark font-monospace">{figures.pendingFinanceOfficer}</h3>
+              <span className="text-secondary small">Awaiting finance officer rates</span>
+            </div>
+          </Col>
 
-      {/* Recent Weighbridge Transactions Summary Table */}
-      <Card className="border shadow-sm rounded-3 bg-white overflow-hidden">
-        <div className="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
-          <div className="d-flex align-items-center gap-2">
-            <h6 className="fw-bold text-dark mb-0">Latest Weighbridge Scale Records</h6>
-            <span className="badge bg-secondary">{transactions.length}</span>
+          {/* 3. Pending FM Approval */}
+          <Col xs={6} md={3}>
+            <div 
+              className="p-3 rounded-3 border bg-primary bg-opacity-10 h-100 cursor-pointer"
+              style={{ cursor: "pointer" }}
+              onClick={() => navigate("/requests/finance-approval")}
+            >
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="small fw-bold text-dark">3. Pending FM Approval</span>
+                <i className="bi bi-check2-circle text-primary fs-5"></i>
+              </div>
+              <h3 className="fw-bold mb-1 text-dark font-monospace">{figures.pendingFinanceManager}</h3>
+              <span className="text-secondary small">Awaiting executive authorization</span>
+            </div>
+          </Col>
+
+          {/* 4. Completed & Paid */}
+          <Col xs={6} md={3}>
+            <div 
+              className="p-3 rounded-3 border bg-success bg-opacity-10 h-100 cursor-pointer"
+              style={{ cursor: "pointer" }}
+              onClick={() => navigate("/requests/completed")}
+            >
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="small fw-bold text-dark">4. Completed / Paid</span>
+                <i className="bi bi-patch-check-fill text-success fs-5"></i>
+              </div>
+              <h3 className="fw-bold mb-1 text-success font-monospace">{figures.completedRequests}</h3>
+              <span className="text-secondary small">Vouchers signed and executed</span>
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Row 3: Live Recent Requests Table */}
+      <Card className="border shadow-sm rounded-3 bg-white p-3">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h6 className="fw-bold text-dark mb-0 text-uppercase" style={{ letterSpacing: "0.03em" }}>
+              Recent Process Requests
+            </h6>
+            <span className="text-muted small">Live workflow requests from Firestore for {activePlantLabel}</span>
           </div>
 
-          <Link to="/api-stream" className="text-primary small fw-semibold text-decoration-none">
-            Open Full Data Grid &rarr;
-          </Link>
+          <Button variant="primary" size="sm" onClick={() => navigate("/requests/new")}>
+            <i className="bi bi-plus-circle me-1"></i> Create Request
+          </Button>
         </div>
 
         <div className="table-responsive">
-          <Table hover className="align-middle mb-0 text-nowrap" style={{ fontSize: "0.875rem" }}>
-            <thead className="table-light text-secondary text-uppercase fs-8 fw-semibold border-bottom">
+          <Table hover size="sm" className="align-middle mb-0 text-nowrap" style={{ fontSize: "0.85rem" }}>
+            <thead className="table-light text-secondary text-uppercase fw-semibold" style={{ fontSize: "0.78rem" }}>
               <tr>
-                <th className="ps-3">Ticket #</th>
+                <th>Request #</th>
                 <th>Plant</th>
+                <th>Ticket #</th>
                 <th>Date</th>
-                <th>Vehicle</th>
-                <th>Supplier / Party</th>
+                <th>Supplier</th>
                 <th>Material</th>
-                <th>Direction</th>
-                <th className="text-end">Net Weight</th>
+                <th className="text-end">Scale Wt (kg)</th>
                 <th className="text-center">Status</th>
+                <th className="text-center">Action</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-4 text-secondary">
-                    <div className="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                    Loading weighbridge transactions...
-                  </td>
-                </tr>
-              ) : transactions.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-4 text-secondary">
-                    No weighbridge transactions recorded yet.
+                  <td colSpan={9} className="text-center py-4 text-muted">
+                    No requests found for {activePlantLabel}.
                   </td>
                 </tr>
               ) : (
-                transactions.slice(0, 6).map((tx) => {
-                  const netWeight = tx.final_net_weight_kg ?? tx.net_weight_kg;
-                  const isCompleted = tx.status === "COMPLETED";
-                  return (
-                    <tr 
-                      key={tx.id || tx.transaction_no} 
-                      style={{ cursor: "pointer" }}
-                      onClick={() => navigate("/api-stream")}
-                    >
-                      <td className="ps-3">
-                        <span className="font-monospace fw-bold text-primary">
-                          {tx.transaction_no}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="font-monospace fw-semibold text-dark">
-                          {tx.plant_code || "HES-1"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-dark small">
-                          {formatDate(tx.second_weight_at || tx.first_weight_at || tx.updated_at)}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="font-monospace text-dark fw-medium">
-                          {tx.vehicle_no || "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="fw-medium text-dark text-truncate d-inline-block" style={{ maxWidth: 180 }} title={tx.supplier_name}>
-                          {tx.supplier_name || "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-dark">
-                          {tx.material_name || "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={tx.direction === "IN" ? "text-primary fw-semibold" : "text-secondary fw-semibold"}>
-                          {tx.direction || "—"}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        {netWeight != null ? (
-                          <span className="font-monospace fw-bold text-success">
-                            {Number(netWeight).toLocaleString()} kg
-                          </span>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                      <td 
-                        className="text-center fw-semibold small"
-                        style={{
-                          backgroundColor: isCompleted ? "#d1e7dd" : "#fff3cd",
-                          color: isCompleted ? "#0f5132" : "#664d03"
+                filteredRequests.slice(0, 6).map((req) => (
+                  <tr key={req.id}>
+                    <td className="font-monospace fw-bold text-dark">#{req.requestNo}</td>
+                    <td><span className="badge bg-secondary-subtle text-dark font-monospace">{req.plantCode || "HES-1"}</span></td>
+                    <td className="font-monospace fw-bold text-primary">{req.ticketNo}</td>
+                    <td className="font-monospace">{req.date || req.createdAt?.slice(0, 10)}</td>
+                    <td className="fw-medium text-dark">{req.supplier}</td>
+                    <td><span className="badge bg-light text-dark border">{req.material}</span></td>
+                    <td className="text-end font-monospace">{Number(req.wbtWeight || 0).toLocaleString()} kg</td>
+                    <td className="text-center">
+                      <span className={`badge ${
+                        req.status === "COMPLETED" ? "bg-success" :
+                        req.status === "REJECTED" ? "bg-danger" :
+                        req.status === "PENDING_QUALITY" ? "bg-warning text-dark" : "bg-info text-dark"
+                      } px-2 py-1`}>
+                        {req.status}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        className="py-0 px-2 fw-semibold"
+                        style={{ fontSize: "0.75rem" }}
+                        onClick={() => {
+                          if (req.status === "PENDING_QUALITY") navigate("/requests/quality");
+                          else if (req.status === "PENDING_FINANCE_OFFICER") navigate("/requests/finance-costing");
+                          else if (req.status === "PENDING_FINANCE_MANAGER") navigate("/requests/finance-approval");
+                          else navigate("/requests/completed");
                         }}
                       >
-                        {isCompleted ? "Completed" : "Pending 2nd"}
-                      </td>
-                    </tr>
-                  );
-                })
+                        Open
+                      </Button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </Table>

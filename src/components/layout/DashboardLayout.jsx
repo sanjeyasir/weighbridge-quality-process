@@ -1,7 +1,89 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { ROLE_CONFIG_MAP, ROLE_PROFILES, DEFAULT_ROLE_VIEWS } from "../../services/firebase/userService";
 import { Offcanvas, Dropdown } from "react-bootstrap";
+
+export const MASTER_NAVIGATION_ITEMS = [
+  {
+    key: "/dashboard",
+    icon: "bi-speedometer2",
+    label: "Dashboard Overview",
+    group: "Overview"
+  },
+  {
+    key: "/weighbridge-transactions",
+    icon: "bi-journal-text",
+    label: "Weighbridge Transactions",
+    group: "Scale Records"
+  },
+  {
+    key: "/requests/new",
+    icon: "bi-plus-circle",
+    label: "Create Process Request",
+    group: "Process Workflow"
+  },
+  {
+    key: "/requests/created",
+    icon: "bi-inbox",
+    label: "Created Requests (Requester)",
+    group: "Process Workflow"
+  },
+  {
+    key: "/requests/quality",
+    icon: "bi-clipboard-check",
+    label: "Quality Parameters Update",
+    group: "Process Workflow"
+  },
+  {
+    key: "/requests/finance-costing",
+    icon: "bi-calculator",
+    label: "Finance Officer Costing",
+    group: "Process Workflow"
+  },
+  {
+    key: "/requests/finance-approval",
+    icon: "bi-check2-circle",
+    label: "Finance Manager Approval",
+    group: "Process Workflow"
+  },
+  {
+    key: "/requests/completed",
+    icon: "bi-patch-check-fill",
+    label: "Completed Requests",
+    group: "Reporting & Archive"
+  },
+  {
+    key: "/requests/rejected",
+    icon: "bi-x-circle-fill",
+    label: "Rejected Requests",
+    group: "Reporting & Archive"
+  },
+  {
+    key: "/view-config",
+    icon: "bi-toggles",
+    label: "View Configuration",
+    group: "Preferences"
+  },
+  {
+    key: "/admin/users",
+    icon: "bi-people",
+    label: "User Accounts & Roles",
+    group: "Administration"
+  },
+  {
+    key: "/plants",
+    icon: "bi-buildings",
+    label: "Plant Master",
+    group: "Administration"
+  },
+  {
+    key: "/api-docs",
+    icon: "bi-file-earmark-code",
+    label: "Swagger API Docs",
+    group: "Administration"
+  }
+];
 
 export default function DashboardLayout({ children }) {
   const { currentUser, logout } = useAuth();
@@ -11,21 +93,92 @@ export default function DashboardLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [viewConfig, setViewConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem("user_view_config");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 992);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+
+    const handleConfigChange = () => {
+      try {
+        const saved = localStorage.getItem("user_view_config");
+        setViewConfig(saved ? JSON.parse(saved) : null);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    window.addEventListener("user_view_config_changed", handleConfigChange);
+    window.addEventListener("app_role_views_changed", handleConfigChange);
+    window.addEventListener("storage", handleConfigChange);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("user_view_config_changed", handleConfigChange);
+      window.removeEventListener("app_role_views_changed", handleConfigChange);
+      window.removeEventListener("storage", handleConfigChange);
+    };
   }, []);
 
+  const isSuperAdmin = (currentUser?.email || "").toLowerCase() === "admin@gmail.com";
+  const isAdmin = currentUser?.role === "admin" || isSuperAdmin;
+
+  // Filtered menu items dynamically driven by user role-based configuration
+  const menuItems = useMemo(() => {
+    let allMasterItems = [...MASTER_NAVIGATION_ITEMS];
+
+    const userRole = isSuperAdmin ? "admin" : (currentUser?.role || "requester").toLowerCase();
+
+    // 1. Check if we have role-specific configured views from viewConfig or localStorage
+    let savedRoleConfigs = null;
+    try {
+      const stored = localStorage.getItem("app_role_view_configs");
+      if (stored) savedRoleConfigs = JSON.parse(stored);
+    } catch (e) {}
+
+    let allowedViews = null;
+
+    if (viewConfig?.roleConfigs && viewConfig.roleConfigs[userRole]) {
+      allowedViews = viewConfig.roleConfigs[userRole];
+    } else if (savedRoleConfigs && savedRoleConfigs[userRole]) {
+      allowedViews = savedRoleConfigs[userRole];
+    } else if (viewConfig?.enabledViews && viewConfig.role === userRole) {
+      allowedViews = viewConfig.enabledViews;
+    } else if (currentUser?.enabledViews && Array.isArray(currentUser.enabledViews) && currentUser.enabledViews.length > 0 && !isSuperAdmin) {
+      allowedViews = currentUser.enabledViews;
+    } else {
+      allowedViews = DEFAULT_ROLE_VIEWS[userRole] || DEFAULT_ROLE_VIEWS.admin;
+    }
+
+    // Filter master items strictly according to allowedViews.
+    // View configuration is not default in non-admin roles and strictly hidden when disabled.
+    const filtered = allMasterItems.filter(item => {
+      if (isSuperAdmin && item.key === "/view-config") return true;
+      return allowedViews.includes(item.key);
+    });
+
+    return filtered;
+  }, [viewConfig, isAdmin, isSuperAdmin, currentUser]);
+
   const getSelectedKey = () => {
-    if (location.pathname.startsWith("/api-stream")) return "/api-stream";
-    if (location.pathname.startsWith("/plants")) return "/plants";
-    if (location.pathname.startsWith("/api-docs")) return "/api-docs";
-    if (location.pathname.startsWith("/admin/users")) return "/admin/users";
-    return "/dashboard";
+    const current = location.pathname;
+    const match = menuItems.find(item => item.key === current);
+    if (match) return match.key;
+    if (current.startsWith("/requests/")) {
+      const subMatch = menuItems.find(item => current.startsWith(item.key));
+      if (subMatch) return subMatch.key;
+    }
+    return current;
   };
 
   const getRoleBadgeVariant = (role) => {
@@ -33,62 +186,31 @@ export default function DashboardLayout({ children }) {
       case "admin": return "danger";
       case "requester": return "primary";
       case "quality": return "purple";
-      case "finance": return "success";
+      case "finance_officer": return "info";
+      case "finance": return "info";
+      case "finance_manager": return "success";
       default: return "secondary";
     }
   };
 
   const getRoleLabel = (role) => {
     switch (role) {
-      case "admin": return "Administrator";
+      case "admin": return "Admin";
       case "requester": return "Requester";
-      case "quality": return "Quality Team";
-      case "finance": return "Finance Team";
+      case "quality": return "Quality";
+      case "finance_officer": return "Finance Officer";
+      case "finance": return "Finance Officer";
+      case "finance_manager": return "Finance Manager";
       default: return role || "Operator";
     }
   };
 
-  const isAdmin = currentUser?.role === "admin";
-
-  // Menu items: Dashboard Overview, Weighbridge Transactions, Plant Master, Swagger API Docs, User Accounts
-  const menuItems = [
-    {
-      key: "/dashboard",
-      icon: "bi-speedometer2",
-      label: "Dashboard Overview"
-    },
-    {
-      key: "/api-stream",
-      icon: "bi-journal-text",
-      label: "Weighbridge Transactions"
-    },
-    {
-      key: "/plants",
-      icon: "bi-buildings",
-      label: "Plant Master"
-    },
-    {
-      key: "/api-docs",
-      icon: "bi-file-earmark-code",
-      label: "Swagger API Docs"
-    }
-  ];
-
-  if (isAdmin) {
-    menuItems.push({
-      key: "/admin/users",
-      icon: "bi-people",
-      label: "User Accounts"
-    });
-  }
-
-  // Sidebar navigation content
   const renderNavContent = (isDrawer = false) => {
     const isExpanded = isDrawer || !collapsed;
 
     return (
       <div className="d-flex flex-column h-100 bg-white">
-        {/* Brand header */}
+        {/* Brand Header */}
         <div 
           className="d-flex align-items-center justify-content-between px-3 border-bottom" 
           style={{ height: 68 }}
@@ -103,7 +225,7 @@ export default function DashboardLayout({ children }) {
                 fontSize: "1.2rem"
               }}
             >
-              <i className="bi bi-journal-text"></i>
+              <i className="bi bi-truck"></i>
             </div>
             {isExpanded && (
               <div className="text-truncate">
@@ -111,7 +233,7 @@ export default function DashboardLayout({ children }) {
                   Weighbridge Hub
                 </div>
                 <div className="text-primary text-uppercase fw-bold" style={{ fontSize: "0.68rem", letterSpacing: "0.05em" }}>
-                  Scale Operations
+                  Quality & Costing
                 </div>
               </div>
             )}
@@ -127,36 +249,46 @@ export default function DashboardLayout({ children }) {
         </div>
 
         {/* Menu Items */}
-        <div className="flex-grow-1 overflow-auto py-3 px-2">
+        <div className="flex-grow-1 overflow-auto py-2 px-2">
           <ul className="nav nav-pills flex-column gap-1">
-            {menuItems.map((item) => {
+            {menuItems.map((item, idx) => {
               const active = getSelectedKey() === item.key;
+              const prevItem = menuItems[idx - 1];
+              const showSectionHeader = isExpanded && (!prevItem || prevItem.group !== item.group);
+
               return (
-                <li key={item.key} className="nav-item">
-                  <button
-                    type="button"
-                    className={`nav-link w-100 text-start d-flex align-items-center gap-3 py-2 px-3 rounded-2 fw-semibold border-0 ${
-                      active 
-                        ? "bg-primary text-white shadow-sm" 
-                        : "text-secondary bg-transparent hover-bg-light"
-                    }`}
-                    style={{ fontSize: "0.9rem", transition: "all 0.15s ease-in-out" }}
-                    onClick={() => {
-                      navigate(item.key);
-                      if (isDrawer) setMobileDrawerOpen(false);
-                    }}
-                    title={!isExpanded ? item.label : undefined}
-                  >
-                    <i className={`bi ${item.icon} fs-5`}></i>
-                    {isExpanded && <span className="text-truncate">{item.label}</span>}
-                  </button>
-                </li>
+                <React.Fragment key={item.key}>
+                  {showSectionHeader && (
+                    <li className="px-3 pt-2 pb-1 text-uppercase fw-bold text-muted" style={{ fontSize: "0.65rem", letterSpacing: "0.06em" }}>
+                      {item.group}
+                    </li>
+                  )}
+                  <li className="nav-item">
+                    <button
+                      type="button"
+                      className={`nav-link w-100 text-start d-flex align-items-center gap-2.5 py-2 px-2.5 rounded-2 fw-semibold border-0 ${
+                        active 
+                          ? "bg-primary text-white shadow-sm" 
+                          : "text-secondary bg-transparent hover-bg-light"
+                      }`}
+                      style={{ fontSize: "0.85rem", transition: "all 0.15s ease-in-out" }}
+                      onClick={() => {
+                        navigate(item.key);
+                        if (isDrawer) setMobileDrawerOpen(false);
+                      }}
+                      title={!isExpanded ? item.label : undefined}
+                    >
+                      <i className={`bi ${item.icon} fs-5 flex-shrink-0`} style={{ width: 22, textAlign: "center" }}></i>
+                      {isExpanded && <span className="text-truncate">{item.label}</span>}
+                    </button>
+                  </li>
+                </React.Fragment>
               );
             })}
           </ul>
         </div>
 
-        {/* User profile footer */}
+        {/* User Profile Footer */}
         <div className="p-3 border-top bg-light">
           {isExpanded ? (
             <div className="mb-2">
@@ -176,9 +308,14 @@ export default function DashboardLayout({ children }) {
                   </div>
                 </div>
               </div>
-              <span className={`badge bg-${getRoleBadgeVariant(currentUser?.role)} text-uppercase fw-bold fs-8`}>
-                {getRoleLabel(currentUser?.role)}
-              </span>
+              <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                <span className={`badge bg-${getRoleBadgeVariant(currentUser?.role)} text-uppercase fw-bold fs-8`}>
+                  {getRoleLabel(currentUser?.role)}
+                </span>
+                <span className="badge bg-secondary-subtle text-dark font-monospace fw-semibold fs-8">
+                  {currentUser?.plantId || "HES-1"}
+                </span>
+              </div>
             </div>
           ) : (
             <div className="d-flex justify-content-center mb-2">
@@ -204,7 +341,7 @@ export default function DashboardLayout({ children }) {
     );
   };
 
-  const siderWidth = collapsed ? 76 : 260;
+  const siderWidth = collapsed ? 76 : 270;
 
   return (
     <div className="d-flex" style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
@@ -265,11 +402,11 @@ export default function DashboardLayout({ children }) {
             </button>
 
             <span className="fw-bold text-dark fs-6">
-              Weighbridge Operations
+              Weighbridge Hub & Process Automation
             </span>
           </div>
 
-          {/* Right Header: User Profile Dropdown (Firebase Live and Notifications removed) */}
+          {/* Right Header: User Profile Dropdown */}
           <div className="d-flex align-items-center gap-2">
             <Dropdown align="end">
               <Dropdown.Toggle 
@@ -296,14 +433,15 @@ export default function DashboardLayout({ children }) {
                   <div className="fw-bold small text-dark">{currentUser?.displayName}</div>
                   <div className="text-muted fs-8 text-truncate">{currentUser?.email}</div>
                 </div>
+                <Dropdown.Item onClick={() => navigate("/view-config")} className="small py-2">
+                  <i className="bi bi-toggles me-2 text-muted"></i> View Configuration
+                </Dropdown.Item>
                 <Dropdown.Item onClick={() => navigate("/change-password")} className="small py-2">
                   <i className="bi bi-key me-2 text-muted"></i> Change Password
                 </Dropdown.Item>
-                {isAdmin && (
-                  <Dropdown.Item onClick={() => navigate("/admin/users")} className="small py-2">
-                    <i className="bi bi-people me-2 text-muted"></i> User Accounts
-                  </Dropdown.Item>
-                )}
+                <Dropdown.Item onClick={() => navigate("/admin/users")} className="small py-2">
+                  <i className="bi bi-people me-2 text-muted"></i> User Accounts & Roles
+                </Dropdown.Item>
                 <Dropdown.Divider />
                 <Dropdown.Item onClick={logout} className="small py-2 text-danger">
                   <i className="bi bi-box-arrow-right me-2 text-danger"></i> Sign Out
@@ -345,40 +483,26 @@ export default function DashboardLayout({ children }) {
             <button 
               type="button" 
               className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
-                getSelectedKey() === "/api-stream" ? "text-primary fw-bold" : "text-secondary"
+                getSelectedKey() === "/weighbridge-transactions" ? "text-primary fw-bold" : "text-secondary"
               }`}
               style={{ fontSize: "0.72rem" }}
-              onClick={() => navigate("/api-stream")}
+              onClick={() => navigate("/weighbridge-transactions")}
             >
               <i className="bi bi-journal-text fs-5 lh-1"></i>
-              <span>Transactions</span>
+              <span>Scale Wt</span>
             </button>
 
             <button 
               type="button" 
               className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
-                getSelectedKey() === "/plants" ? "text-primary fw-bold" : "text-secondary"
+                getSelectedKey() === "/requests/created" ? "text-primary fw-bold" : "text-secondary"
               }`}
               style={{ fontSize: "0.72rem" }}
-              onClick={() => navigate("/plants")}
+              onClick={() => navigate("/requests/created")}
             >
-              <i className="bi bi-buildings fs-5 lh-1"></i>
-              <span>Plants</span>
+              <i className="bi bi-inbox fs-5 lh-1"></i>
+              <span>Requests</span>
             </button>
-
-            {isAdmin && (
-              <button 
-                type="button" 
-                className={`btn btn-link text-decoration-none d-flex flex-column align-items-center py-1 px-2 border-0 ${
-                  getSelectedKey() === "/admin/users" ? "text-primary fw-bold" : "text-secondary"
-                }`}
-                style={{ fontSize: "0.72rem" }}
-                onClick={() => navigate("/admin/users")}
-              >
-                <i className="bi bi-people fs-5 lh-1"></i>
-                <span>Users</span>
-              </button>
-            )}
 
             <button 
               type="button" 

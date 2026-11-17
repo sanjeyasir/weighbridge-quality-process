@@ -19,16 +19,12 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Check if Mock Mode override is active in LocalStorage
-const localMockVal = localStorage.getItem("firebase_mock_override");
-const isMockMode = localMockVal === "true";
+// 100% Real Live Database: Mock Mode disabled completely
+const isMockMode = false;
 
 export { app, auth, db, storage, isMockMode, firebaseConfig };
 
-/**
- * Toggle Mock Mode utility for development demoing
- */
-export function toggleMockMode(enable) {
-  localStorage.setItem("firebase_mock_override", enable ? "true" : "false");
-  window.location.reload();
+export function toggleMockMode() {
+  // Kept for backward compatibility but always disabled
+  console.info("Mock mode is disabled. System is in 100% Live Firestore mode.");
 }
